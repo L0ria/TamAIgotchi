@@ -57,7 +57,7 @@ You'll require two modified libraries:
 
 **1. ESP-Wifi-Config (fork with the 63-character WiFi password fix + user-extensible settings)**
 
-The stock ESP-Wifi-Config truncates WiFi passwords to 30 characters, so this project uses a fork with the fix. v2.3.0 additionally provides the user-extensible settings used here for the LocalAI endpoint/key (setup page **Custom** tab):
+The stock ESP-Wifi-Config truncates WiFi passwords to 30 characters, so this project uses a fork with the fix:
 - Download [ESP-Wifi-Config v2.3.0](https://github.com/L0ria/ESP-Wifi-Config/archive/refs/tags/v2.3.0.zip) (or the release asset `ESP-Wifi-Config-2.3.0.zip`)
 - In the Arduino IDE click Sketch->Include Library->Add .ZIP Library...
 - Select the downloaded ESP-Wifi-Config-2.3.0.zip file
