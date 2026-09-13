@@ -10,14 +10,23 @@
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 I2SClass i2s;
 
-OpenAI openai(api_key, api_url);
-OpenAI_ChatCompletion chat(openai);
-OpenAI_AudioTranscription audio(openai);
-
 // WiFi credentials are stored by the ESP-Wifi-Config library (flash/EEPROM)
 // instead of being hardcoded. When no known network is reachable the device
 // drops into AP mode and serves a web setup page to configure the WiFi.
 ESPWifiConfig wifiConfig(WIFI_AP_NAME, WIFI_SETUP_PORT, -1, false, "", "", true);
+
+// The LocalAI endpoint + API key are user-defined settings of this same
+// library (v2.3.0+): they are registered in setup() before initialize(),
+// stored in the library's flash slots, editable on the setup page (Custom
+// tab) and read back via getSetting(). The constants in config.h only act
+// as initial defaults (first boot / after a full reset).
+//
+// The OpenAI client is (re)built in setup() from the stored settings after
+// wifiConfig.initialize() (the library reboots the device after a save on
+// the setup page, so the values read there are always up to date).
+OpenAI openai("", "");
+OpenAI_ChatCompletion chat(openai);
+OpenAI_AudioTranscription audio(openai);
 
 uint32_t lastButtonState = HIGH;
 uint32_t lastDebounce = 0;
@@ -83,8 +92,10 @@ void showWifiStatus() {
 // comes back up serving the setup page again. Used by the 5 s
 // long-press of the WiFi-config button when a wrong password was saved
 // and the device would otherwise keep retrying forever.
+// resetAllSettings() covers all registered settings (built-in + the LocalAI
+// URL/key user slots), so the config.h defaults come back after the reboot.
 void resetWifiSettingsAndRestart() {
-  wifiConfig.ESP_reset_settings(); // public library helper, library's own EEPROM layout
+  wifiConfig.resetAllSettings(); // public library helper (v2.3.0), all settings
   Serial.println(F("WiFi settings reset. Rebooting into setup AP mode..."));
   display.clearDisplay();
   display.setCursor(0, 0);
@@ -143,6 +154,13 @@ void setup() {
   pinMode(WIFI_CONFIG_BUTTON_PIN, INPUT_PULLUP);
   pinMode(RESERVE_BUTTON_PIN, INPUT_PULLUP);
 
+  // Register the LocalAI user settings BEFORE initialize() (library API
+  // requirement). The config.h values are the initial defaults.
+  if (wifiConfig.addSetting("LOCALAI_URL", api_url) < 0)
+    Serial.println(F("WARNING: could not register LOCALAI_URL setting"));
+  if (wifiConfig.addSetting("LOCALAI_KEY", api_key) < 0)
+    Serial.println(F("WARNING: could not register LOCALAI_KEY setting"));
+
 /* setup display*/
   if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3D for 128x64
     Serial.println(F("SSD1306 allocation failed"));
@@ -169,7 +187,16 @@ void setup() {
   }
   combinedOutput(0, 16, "I2S bus initialized.", false);
 
-/* setup openai */
+/* setup openai (endpoint + key from the stored settings: Custom tab of the
+   setup page, config.h defaults on first boot / after a full reset) */
+  String localaiUrl = wifiConfig.getSetting("LOCALAI_URL");
+  String localaiKey = wifiConfig.getSetting("LOCALAI_KEY");
+  if (localaiUrl.length() == 0) localaiUrl = api_url;
+  if (localaiKey.length() == 0) localaiKey = api_key;
+  openai = OpenAI(localaiKey.c_str(), localaiUrl.c_str());
+  Serial.print(F("LocalAI endpoint: "));
+  Serial.println(localaiUrl);
+
   chat.setModel("gpt-4");           //Model to use for completion. Default is gpt-3.5-turbo
   chat.setSystem("You are communicating through a small display, keep answers as short as possible");      //Description of the required assistant
   chat.setMaxTokens(40);            //The maximum number of tokens to generate in the completion.

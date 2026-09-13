@@ -29,17 +29,15 @@ arduino-ide TamAIgotchi/TamAIgotchi.ino
 
 ## Configuration
 
-Edit `config.h` and enter your
-- LocalAI API url
-- LocalAI API key
+### LocalAI endpoint & key
 
-in the first two lines:
-```
-const char* api_url = "http://192\.168\.1\.5:8080/v1/";
-const char* api_key = "sk1234567890";
-```
+The LocalAI API URL and key are not hardcoded. They are stored by the ESP-Wifi-Config library and configured through the same web setup page as the WiFi:
 
-Please make sure to escape dots (.) in the url string like in the example above.
+- The values in `config.h` (`api_url` / `api_key`) only act as initial defaults (first boot / after a full reset).
+- Change them at runtime: open the setup page (`http://<device-ip>:8080`, or `http://192.168.1.1:8080` in AP mode), go to the **Custom** tab, enter the API URL and key, and press **Save**. The device reboots and picks up the new values.
+- Please make sure to escape dots (.) in the URL string, e.g. `http://192\.168\.1\.5:8080/v1/`.
+
+> **Note:** the setup page requires a login. The default credentials are **username `admin`, password `pass_ESP`** — you can change them on the **Security** tab of the setup page.
 
 ### WiFi
 
@@ -57,12 +55,12 @@ To compile the program you'll need to install the following libraries in the Ard
 
 You'll require two modified libraries:
 
-**1. ESP-Wifi-Config (fork with the 63-character WiFi password fix)**
+**1. ESP-Wifi-Config (fork with the 63-character WiFi password fix + user-extensible settings)**
 
 The stock ESP-Wifi-Config truncates WiFi passwords to 30 characters, so this project uses a fork with the fix:
-- Download [ESP-Wifi-Config v2.2.7](https://github.com/L0ria/ESP-Wifi-Config/archive/refs/tags/v2.2.7.zip)
+- Download [ESP-Wifi-Config v2.3.0](https://github.com/L0ria/ESP-Wifi-Config/archive/refs/tags/v2.3.0.zip) (or the release asset `ESP-Wifi-Config-2.3.0.zip`)
 - In the Arduino IDE click Sketch->Include Library->Add .ZIP Library...
-- Select the downloaded ESP-Wifi-Config-2.2.7.zip file
+- Select the downloaded ESP-Wifi-Config-2.3.0.zip file
 
 **2. LocalAI-ESP32 (modified OpenAI-ESP32 for LocalAI)**
 - Download [LocalAI-ESP32 library](https://github.com/a-i-a-d/LocalAI-ESP32/archive/refs/tags/v0.0.1.zip)
