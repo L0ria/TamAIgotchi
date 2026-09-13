@@ -78,3 +78,12 @@ The stock ESP-Wifi-Config truncates WiFi passwords to 30 characters, so this pro
 When you push the button, the LED lights up and the microphone will record 5 seconds of audio.
 The audio recording is sent to your LocalAI whisper model and gets transcoded into a text.
 The text then is sent as prompt to the LocalAI gpt4 model and the response is shown on the oled display.
+
+## Debug output
+
+The sketch can print a detailed serial trace of every step (boot, pin setup, LocalAI settings, OLED init, WiFi mode, I2S init, recording size, transcription/prompt/response lengths, button events) prefixed with `[DEBUG]`.
+
+- Debug output is **off by default**.
+- To enable it, uncomment `#define DEBUG` in `TamAIgotchi/config.h` (or pass `-DDEBUG` as an extra build flag) and recompile.
+- When `DEBUG` is not defined, all `D_TD()` / `D_TDDEC()` / `D_TDLN()` calls compile away to nothing — no runtime cost.
+- The regular user-facing status and error lines (shown on the OLED and mirrored to serial) are always printed, independent of the debug switch.
