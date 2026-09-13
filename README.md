@@ -75,8 +75,8 @@ The stock ESP-Wifi-Config truncates WiFi passwords to 30 characters, so this pro
 
 ## Usage
 
-When you push the button, the LED lights up and the microphone will record 5 seconds of audio.
-The audio recording is sent to your LocalAI whisper model and gets transcoded into a text.
+Hold the button to record: the LED lights up and the microphone records audio for as long as you keep the button pressed (max 10 s).
+When you release the button (or the 10 s limit is reached), the recording is sent to your LocalAI whisper model and gets transcoded into a text.
 The text then is sent as prompt to the LocalAI gpt4 model and the response is shown on the oled display.
 
 ## Debug output

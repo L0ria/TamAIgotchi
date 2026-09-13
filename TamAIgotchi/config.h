@@ -29,6 +29,26 @@ const char* api_key = "sk1234567890";
 #define D_TDLN(x)
 #endif
 
+// ---------------------------------------------------------------------------
+// Hold-to-record (issue #9): the button is held for as long as audio is
+// recorded; releasing it sends the recording to LocalAI for transcription.
+// The recording buffer is preallocated once in setup() (PSRAM) and reused
+// for every recording. These constants are static: the HW configuration is
+// fixed (16 kHz / 32-bit / mono = 65536 bytes per second of audio).
+//
+//   MAX_REC_SECONDS  - hard cap on the recording length. 10 s = 640 KB,
+//                      comfortably inside the LocalAI 20 s socket timeout
+//                      and any whisper model's comfort zone. The display
+//                      shows "max 10 s" while recording.
+//   REC_SAFETY_MARGIN_KB - free PSRAM to keep clear (for the HTTP upload
+//                      buffer in LocalAI-ESP32) when sizing the buffer.
+//   REC_CHUNK_BYTES  - bytes read per i2s.readBytes() call (~97 ms of audio).
+//                      Bounding each read keeps loop() responsive and makes
+//                      the button-release latency at most one chunk (~100 ms).
+#define MAX_REC_SECONDS 10
+#define REC_SAFETY_MARGIN_KB 64
+#define REC_CHUNK_BYTES 1600
+
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
 
