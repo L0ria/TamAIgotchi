@@ -361,8 +361,8 @@ void loop() {
     else {
       if(buttonPushed) {
         buttonPushed = false;
+        D_TDLN(F("button released"));
       }
-      D_TDLN(F("button released"));
     }
   }
 }
