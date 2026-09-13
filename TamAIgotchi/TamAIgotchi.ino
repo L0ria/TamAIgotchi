@@ -48,6 +48,59 @@ void combinedOutput(int x, int y, char* line, bool clrscr) {
   display.display();
 }
 
+// Show an error on the OLED (title line 1, wrapped detail lines 2-4) and
+// mirror the full message to Serial. The detail text is wrapped at word
+// boundaries to fit the 128 px display (21 chars/line at font size 1).
+// The screen stays until the next button press (the button flow re-shows
+// the WiFi status first).
+void displayError(const String& title, const String& detail) {
+  Serial.print(F("ERROR: "));
+  Serial.println(title);
+  if (detail.length()) {
+    Serial.print(F("       "));
+    Serial.println(detail);
+  }
+
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.println(title);
+
+  String word;
+  String line;
+  int y = 16;
+  const int charsPerLine = 21; // 128 px / 6 px per char
+  const int maxLines = 3;
+  auto flushLine = [&]() {
+    if (line.length() && y < SCREEN_HEIGHT) {
+      display.setCursor(0, y);
+      display.println(line);
+      y += 16;
+      line = "";
+    }
+  };
+  for (unsigned int i = 0; i <= detail.length() && y < SCREEN_HEIGHT; i++) {
+    char c = detail.charAt(i);
+    if (c == ' ' || c == '\n' || c == '\t') {
+      if (word.length()) {
+        if (line.length() + word.length() > charsPerLine) flushLine();
+        if (line.length()) line += " ";
+        line += word;
+        word = "";
+      }
+      if (c == '\n') flushLine();
+    } else {
+      word += c;
+    }
+  }
+  if (word.length()) {
+    if (line.length() + word.length() > charsPerLine) flushLine();
+    if (line.length()) line += " ";
+    line += word;
+  }
+  flushLine();
+  display.display();
+}
+
 // Show the current WiFi situation on the display (and Serial).
 //  - AP mode:    show the access point name + IP so it can be configured
 //  - connected:  show the IP address assigned by the router
@@ -120,6 +173,16 @@ String speechToText() {
   log_d(transcription);
 
   free(wav_buffer);
+
+  // The library swallows HTTP failures (unreachable host, server error,
+  // model not installed) and just returns an empty string. Make that
+  // visible instead of sending an empty prompt to the LLM.
+  transcription.trim();
+  if (transcription.length() == 0) {
+    displayError(F("Transcription failed"),
+                F("LocalAI unreachable or returned an error. Check LOCALAI_URL in the setup page (Custom tab)."));
+    return String();
+  }
   return transcription;
 }
 
@@ -131,20 +194,31 @@ void textGeneration(String prompt) {
 
   OpenAI_StringResponse result = chat.message(prompt);
   Serial.printf("Received message. Tokens: %u\n", result.tokens());
+
+  // Check the error FIRST: on failure the library returns an empty
+  // response plus the server's error text (e.g. "The model 'gpt-4' does
+  // not exist"), which we must not swallow into a blank display.
+  if (result.error()) {
+    displayError(F("LLM error"), String(result.error()));
+    return;
+  }
+
   String response = result.getAt(0);
   response.trim();
   response.replace("\n", " ");
   log_d(response);
 
+  if (response.length() == 0) {
+    // HTTP 200 but no content (e.g. an unexpected response shape).
+    displayError(F("Empty response"),
+                F("LocalAI returned no text. Check the model and its settings."));
+    return;
+  }
+
   char cresponse[response.length() + 1];
   memcpy(cresponse, response.c_str(), response.length() + 1);
   combinedOutput(0, 0, "Response: ", true);
   combinedOutput(0, 16, cresponse, false);
-
-  if(result.error()) {
-    Serial.print("Error! ");
-    Serial.println(result.error());
-  }
 }
 
 void setup() {
@@ -247,6 +321,11 @@ void loop() {
           // Connected to a known network: show the IP, then run the voice flow.
           showWifiStatus();
           String prompt = speechToText();
+          if (prompt.length() == 0) {
+            // Transcription failed (error already shown on OLED + Serial):
+            // no point sending an empty prompt to the LLM.
+            return;
+          }
           textGeneration(prompt);
         } else {
           // Not connected: keep showing the access point / connection status.
