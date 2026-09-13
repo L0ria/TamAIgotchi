@@ -11,6 +11,24 @@ const char* api_key = "sk1234567890";
 // Port of the ESP-Wifi-Config setup web page (http://192.168.1.1:<port>).
 #define WIFI_SETUP_PORT 8080
 
+// ---------------------------------------------------------------------------
+// Serial debug output: OFF by default.
+// Enable by uncommenting the line below (or via a build flag: -DDEBUG) to get
+// a detailed serial trace of every step (boot, WiFi mode, I2S, recording,
+// transcription, prompt, response, button events). All D_T*() calls compile
+// away to nothing when DEBUG is not defined.
+//#define DEBUG
+
+#ifdef DEBUG
+#define D_TD(x)    Serial.print(F("[DEBUG] ")); Serial.print(x)
+#define D_TDDEC(x) Serial.print(F("[DEBUG] ")); Serial.print(x, DEC)
+#define D_TDLN(x)  Serial.print(F("[DEBUG] ")); Serial.println(x)
+#else
+#define D_TD(x)
+#define D_TDDEC(x)
+#define D_TDLN(x)
+#endif
+
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
 

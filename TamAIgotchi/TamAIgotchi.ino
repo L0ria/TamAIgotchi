@@ -165,12 +165,18 @@ String speechToText() {
 
   combinedOutput(0, 0, "Recording", true);
   digitalWrite(LED_PIN, HIGH);
+  D_TDLN(F("recording start (5 s)"));
   wav_buffer = i2s.recordWAV(5, &wav_size);
+
+  D_TDDEC(wav_size);
+  D_TDLN(F(" bytes recorded (WAV)"));
   digitalWrite(LED_PIN, LOW);
 
   combinedOutput(0, 0, "Sending audio", true);
   String transcription = audio.file(wav_buffer, wav_size, OPENAI_AUDIO_INPUT_FORMAT_WAV);
   log_d(transcription);
+  D_TD(F("transcription length: "));
+  D_TDLN(transcription.length());
 
   free(wav_buffer);
 
@@ -189,11 +195,15 @@ String speechToText() {
 void textGeneration(String prompt) {
   char cprompt[prompt.length() + 1];
   memcpy(cprompt, prompt.c_str(), prompt.length() + 1);
+  D_TD(F("prompt length: "));
+  D_TDLN(prompt.length());
   combinedOutput(0, 0, "Sending prompt", true);
   combinedOutput(0, 16, cprompt, false);
 
   OpenAI_StringResponse result = chat.message(prompt);
   Serial.printf("Received message. Tokens: %u\n", result.tokens());
+  D_TD(F("response length: "));
+  D_TDLN(String(result.getAt(0)).length());
 
   // Check the error FIRST: on failure the library returns an empty
   // response plus the server's error text (e.g. "The model 'gpt-4' does
@@ -223,10 +233,12 @@ void textGeneration(String prompt) {
 
 void setup() {
   Serial.begin(115200);
+  D_TDLN(F("setup() start"));
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   pinMode(LED_PIN, OUTPUT);
   pinMode(WIFI_CONFIG_BUTTON_PIN, INPUT_PULLUP);
   pinMode(RESERVE_BUTTON_PIN, INPUT_PULLUP);
+  D_TDLN(F("pin setup done (BUTTON_PIN, LED_PIN, WIFI_CONFIG_BUTTON_PIN, RESERVE_BUTTON_PIN)"));
 
   // Register the LocalAI user settings BEFORE initialize() (library API
   // requirement). The config.h values are the initial defaults.
@@ -234,12 +246,14 @@ void setup() {
     Serial.println(F("WARNING: could not register LOCALAI_URL setting"));
   if (wifiConfig.addSetting("LOCALAI_KEY", api_key) < 0)
     Serial.println(F("WARNING: could not register LOCALAI_KEY setting"));
+  D_TDLN(F("LocalAI settings registered (LOCALAI_URL, LOCALAI_KEY)"));
 
 /* setup display*/
   if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3D for 128x64
     Serial.println(F("SSD1306 allocation failed"));
     for(;;);
   }
+  D_TDLN(F("OLED display initialized (SSD1306 @ 0x3C)"));
   display.setTextSize(1);
   display.setTextColor(WHITE);
   display.clearDisplay();
@@ -252,6 +266,9 @@ void setup() {
     wifiConfig.Start_HTTP_Server(0);
   }
 
+  D_TD(F("WiFi mode after initialize(): "));
+  D_TDLN(wifiConfig.ESP_mode == AP_MODE ? "AP (setup page)" : "STA");
+
 /* setup i2s */  
   combinedOutput(0, 0, "Initializing I2S bus...", true);
   i2s.setPins(I2S_SCK, I2S_WS, -1, I2S_DIN);
@@ -260,6 +277,7 @@ void setup() {
     return;
   }
   combinedOutput(0, 16, "I2S bus initialized.", false);
+  D_TDLN(F("I2S bus initialized (16 kHz, 32-bit, mono, slot left)"));
 
 /* setup openai (endpoint + key from the stored settings: Custom tab of the
    setup page, config.h defaults on first boot / after a full reset) */
@@ -270,8 +288,11 @@ void setup() {
   openai = OpenAI(localaiKey.c_str(), localaiUrl.c_str());
   Serial.print(F("LocalAI endpoint: "));
   Serial.println(localaiUrl);
+  D_TD(F("LocalAI endpoint resolved: "));
+  D_TDLN(localaiUrl);
 
   chat.setModel("gpt-4");           //Model to use for completion. Default is gpt-3.5-turbo
+  D_TDLN(F("chat model: gpt-4, max_tokens: 40, temperature: 0.2"));
   chat.setSystem("You are communicating through a small display, keep answers as short as possible");      //Description of the required assistant
   chat.setMaxTokens(40);            //The maximum number of tokens to generate in the completion.
   chat.setTemperature(0.2);         //float between 0 and 2. Higher value gives more random results.
@@ -285,6 +306,7 @@ void setup() {
 
 /* show the final WiFi status (access point name + IP, or the assigned IP) */
   showWifiStatus();
+  D_TDLN(F("setup() done"));
 }
 
 void loop() {
@@ -296,10 +318,12 @@ void loop() {
   // and reboots into the setup AP (escape hatch for a wrong password).
   if (digitalRead(WIFI_CONFIG_BUTTON_PIN) == LOW) {
     if (!wifiBtnHeld) {
+      D_TDLN(F("WiFi-config button pressed (hold 5 s to reset settings)"));
       wifiBtnHeld = true;
       wifiBtnPressStart = millis();
     } else if ((millis() - wifiBtnPressStart) >= WIFI_BTN_LONG_PRESS_MS) {
       Serial.println(F("WiFi-config button held 5 s - resetting WiFi settings"));
+      D_TDLN(F("WiFi-config button long-press: resetting WiFi settings and rebooting"));
       resetWifiSettingsAndRestart(); // does not return (reboots)
     }
   } else {
@@ -317,6 +341,7 @@ void loop() {
     if (reading == LOW) { // Button is pushed (low due to pullup)
       if(!buttonPushed) {
         buttonPushed = true;
+        D_TDLN(F("button pressed (voice flow start)"));
         if (wifiConfig.ESP_mode != AP_MODE && wifiConfig.wifi_connected) {
           // Connected to a known network: show the IP, then run the voice flow.
           showWifiStatus();
@@ -337,6 +362,7 @@ void loop() {
       if(buttonPushed) {
         buttonPushed = false;
       }
+      D_TDLN(F("button released"));
     }
   }
 }
