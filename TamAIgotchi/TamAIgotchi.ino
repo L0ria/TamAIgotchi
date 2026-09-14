@@ -7,6 +7,8 @@
 #include "esp_heap_caps.h"  // heap_caps_malloc / heap_caps_get_free_size (PSRAM recording buffer)
 #include <OpenAI.h>
 #include "config.h"
+#include "alien.h"
+#include <string.h>  // strlen (speech-bubble width from ALIEN_BUBBLE_TEXT)
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 I2SClass i2s;
@@ -40,6 +42,21 @@ OpenAI_AudioTranscription audio(openai);
 //               GPIO11 hold 5 s = back to IDLE, main button = new recording
 enum RecState { IDLE, RECORDING, SENDING, RESPONSE };
 RecState recState = IDLE;
+
+// ---------------------------------------------------------------------------
+// Idle animation (issue #16): a small pixel-art alien that entertains the
+// screen after ALIEN_IDLE_TIMEOUT_MS without any button press (see config.h
+// for all timings). The animation also returns ALIEN_RESPONSE_TIMEOUT_MS
+// after the LLM response has been shown without a button press.
+//   ANIM_IDLE   - waiting for inactivity (IDLE or RESPONSE state)
+//   ANIM_ACTIVE - running the 70 s loop (bubble / wave / stand phases)
+enum AlienState { ANIM_IDLE, ANIM_ACTIVE };
+AlienState alienState = ANIM_IDLE;
+unsigned long alienStateStart = 0;   // millis() when the current phase started
+unsigned long alienActivityMs = 0;   // millis() of the last button press
+int alienPhase = 0;                  // 0=bubble, 1=wave, 2=bubble, 3=wave, 4=stand
+int alienFrame = 0;                  // current sprite frame index (0..3)
+unsigned long alienFrameMs = 0;      // millis() of the last frame swap
 
 // Scrollable response view (issue #13): the reply is word-wrapped into this
 // static table and rendered as a RESPONSE_VISIBLE_LINES window below a
@@ -84,6 +101,101 @@ bool buttonPressed(BtnState& b) {
 bool buttonLongPress(BtnState& b) {
   return (b.lastState == LOW) && !b.longFired &&
          (millis() - b.pressStart) >= BUTTON_LONG_PRESS_MS;
+}
+
+// ---------------------------------------------------------------------------
+// Idle animation (issue #16): helpers
+// ---------------------------------------------------------------------------
+
+// Any button press is activity: it stops the animation and restarts the
+// inactivity timers (both the idle start and the response auto-return).
+void markAlienActivity() {
+  alienActivityMs = millis();
+  if (alienState == ANIM_ACTIVE) {
+    alienState = ANIM_IDLE;
+    alienPhase = 0;
+  }
+}
+
+// The animation only runs while the device is fully usable: STA mode,
+// connected, and the recording buffer allocated (see issue #16 answers).
+bool alienCanAnimate() {
+  return (rec_buf != NULL) &&
+         (wifiConfig.ESP_mode != AP_MODE) &&
+         wifiConfig.wifi_connected;
+}
+
+// Draw one alien sprite at (x, y) using the Adafruit_GFX 1-bit format
+// (MSB-first row-major, as in alien.h).
+void renderAlien(int frame, int x, int y) {
+  display.drawBitmap(x, y, alienFrameData[frame], ALIEN_SPRITE_W, ALIEN_SPRITE_H, WHITE);
+}
+
+// Render the current animation scene. The alien (24x22 px) is anchored at
+// (4, 42): it spans x 4..27 (< 64) and y 42..63 (>= 32), so it stays in the
+// lower-left quadrant. The speech bubble sits above the alien's head at
+// (2, 24) with its width derived from the configured text (clamped so it
+// never crosses the vertical middle at x = 64); y 24..39 (above the middle).
+void renderAlienScene() {
+  display.clearDisplay();
+  if (alienPhase == 0 || alienPhase == 2) {
+    // Speech-bubble phase: standing still + bubble with the configured text.
+    // Font 1 advances 6 px per char (5 px glyph + 1 px gap); add 2 px
+    // padding on each side, clamp to 60 px wide so the bubble stays left
+    // of the vertical middle even with a longer ALIEN_BUBBLE_TEXT.
+    int bubbleW = strlen(ALIEN_BUBBLE_TEXT) * 6 + 4;
+    if (bubbleW > 60) bubbleW = 60;
+    display.drawRect(2, 24, bubbleW, 16, WHITE);
+    display.setCursor(4, 28);
+    display.print(ALIEN_BUBBLE_TEXT);
+    renderAlien(ALIEN_FRAME_STAND, 4, 42);
+  } else if (alienPhase == 1 || alienPhase == 3) {
+    // Jump & wave phase: alternating jump / wave frames (swap in alienUpdate()).
+    renderAlien(alienFrame, 4, 42);
+  } else {
+    // Standing-still phase: just the alien, no animation.
+    renderAlien(ALIEN_FRAME_STAND, 4, 42);
+  }
+  display.display();
+}
+
+// Advance the 70 s loop (bubble 4 s -> wave 16 s -> bubble 4 s -> wave 16 s
+// -> stand 30 s -> repeat), swap the sprite frame every ALIEN_FRAME_MS
+// during the wave phases, and re-render on every change.
+void alienUpdate() {
+  if (alienState != ANIM_ACTIVE) return;
+  unsigned long now = millis();
+  unsigned long t = now - alienStateStart;
+
+  if (alienPhase == 0 || alienPhase == 2) {
+    if (t >= ALIEN_BUBBLE_MS) { alienPhase++; alienStateStart = now; renderAlienScene(); }
+    return;
+  }
+  if (alienPhase == 1 || alienPhase == 3) {
+    // Wave phase: cycle JUMP (body up) -> WAVEUP (arm up) -> WAVEDN (arm
+    // down) every ALIEN_FRAME_MS for a continuous jump-and-wave motion.
+    if (t >= ALIEN_WAVE_MS) {
+      alienPhase++;
+      alienStateStart = now;
+      alienFrame = ALIEN_FRAME_STAND;
+      renderAlienScene();
+      return;
+    }
+    if (now - alienFrameMs >= ALIEN_FRAME_MS) {
+      alienFrameMs = now;
+      alienFrame = (alienFrame == ALIEN_FRAME_JUMP)   ? ALIEN_FRAME_WAVE_UP
+                 : (alienFrame == ALIEN_FRAME_WAVE_UP) ? ALIEN_FRAME_WAVE_DOWN
+                 : ALIEN_FRAME_JUMP;
+      renderAlienScene();
+    }
+    return;
+  }
+  // Phase 4: standing still for ALIEN_STAND_MS, then the loop restarts.
+  if (t >= ALIEN_STAND_MS) {
+    alienPhase = 0;
+    alienStateStart = now;
+    renderAlienScene();
+  }
 }
 
 
@@ -208,6 +320,8 @@ void showWifiStatus() {
     Serial.println(F("Connecting to WiFi..."));
   }
   display.display();
+  markAlienActivity(); // issue #16: showWifiStatus() is always the result of
+                       // a button press (or boot) - re-arm the idle timer
 }
 
 // Escape hatch: wipe the stored WiFi (and web) credentials and reboot.
@@ -421,6 +535,10 @@ void textGeneration(String prompt) {
   scrollOffset = 0;
   renderResponseWindow();
   recState = RESPONSE;
+  // Issue #16: re-arm the inactivity timer so the animation returns
+  // ALIEN_RESPONSE_TIMEOUT_MS after the response has been shown without a
+  // button press (driven from loop() via markAlienActivity()).
+  markAlienActivity();
   D_TDLN(F("response ready (scroll: GPIO9 down / GPIO11 up, hold GPIO11 5 s to exit)"));
 }
 
@@ -519,6 +637,25 @@ void loop() {
   // network and serves the setup page while in AP mode.
   wifiConfig.handle(10000);
 
+  // Idle animation (issue #16): starts after ALIEN_IDLE_TIMEOUT_MS without
+  // any button press (IDLE state) or after ALIEN_RESPONSE_TIMEOUT_MS of the
+  // response being shown (RESPONSE state); any button press stops it.
+  if (alienCanAnimate() && alienState == ANIM_IDLE) {
+    unsigned long now = millis();
+    unsigned long timeout = (recState == RESPONSE)
+                          ? ALIEN_RESPONSE_TIMEOUT_MS
+                          : ALIEN_IDLE_TIMEOUT_MS;
+    if ((now - alienActivityMs) >= timeout) {
+      alienState = ANIM_ACTIVE;
+      alienPhase = 0;
+      alienStateStart = now;
+      alienFrame = ALIEN_FRAME_STAND;
+      renderAlienScene();
+      D_TDLN(F("alien animation: started (idle timeout without button press)"));
+    }
+  }
+  alienUpdate();
+
   // Release detection: once a button is stably HIGH again, clear its
   // one-shot flags so the next press can act (and the 5 s long-press can
   // fire again). Checked for every button in every state.
@@ -563,6 +700,9 @@ void loop() {
   if (recState == IDLE) {
     if (buttonPressed(mainBtn) && !mainBtn.acted) {
       mainBtn.acted = true; // one action per press
+      // Issue #16: a press is activity - stop the animation (if running) and
+      // re-arm the inactivity timer.
+      markAlienActivity();
       D_TDLN(F("button pressed (hold to record)"));
       if (rec_buf == NULL) {
         // Recording buffer allocation failed at boot: keep the error
@@ -626,15 +766,20 @@ void loop() {
 
   if (recState == RESPONSE) {
     // Scrollable response view (issue #13).
+    // Issue #16: any button press is activity - it stops the animation
+    // (if running) and restarts the auto-return timer.
     // GPIO9 (scroll down): short press = next line; the 5 s long-press
     // (WiFi reset) is already handled above in every state.
     if (buttonPressed(scrollDownBtn) && !scrollDownBtn.acted) {
       scrollDownBtn.acted = true;
+      markAlienActivity();
       if (scrollOffset < respLineCount - RESPONSE_VISIBLE_LINES) {
         scrollOffset++;
-        renderResponseWindow();
         D_TD(F("scroll down ")); D_TDLN(scrollOffset + 1);
       }
+      // Always refresh: also recovers the screen if the idle animation was
+      // running when this press landed (issue #16).
+      renderResponseWindow();
     }
     // GPIO11 (scroll up): short press = previous line; 5 s hold = exit
     // the response view back to IDLE.
@@ -643,21 +788,25 @@ void loop() {
       Serial.println(F("Scroll-up button held 5 s - exiting response view"));
       D_TDLN(F("scroll-up button long-press: back to IDLE"));
       recState = IDLE;
-      showWifiStatus();
+      showWifiStatus(); // also marks activity (issue #16)
       mainBtn.lastState = HIGH;
       return;
     }
     if (buttonPressed(scrollUpBtn) && !scrollUpBtn.acted) {
       scrollUpBtn.acted = true;
+      markAlienActivity();
       if (scrollOffset > 0) {
         scrollOffset--;
-        renderResponseWindow();
         D_TD(F("scroll up ")); D_TDLN(scrollOffset + 1);
       }
+      // Always refresh: also recovers the screen if the idle animation was
+      // running when this press landed (issue #16).
+      renderResponseWindow();
     }
     // Main button: starts a new recording (same as in IDLE).
     if (buttonPressed(mainBtn) && !mainBtn.acted) {
       mainBtn.acted = true;
+      markAlienActivity();
       D_TDLN(F("button pressed (hold to record)"));
       if (rec_buf == NULL) {
         displayError(F("Record buffer alloc failed"),
@@ -691,5 +840,6 @@ void loop() {
     recState = IDLE;
     mainBtn.lastState = HIGH; // re-arm the debounce for the next press
     mainBtn.acted = false;
+    markAlienActivity(); // issue #16: re-arm the idle-animation timer
   }
 }
