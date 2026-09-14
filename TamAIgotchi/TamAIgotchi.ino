@@ -29,16 +29,24 @@ OpenAI openai("", "");
 OpenAI_ChatCompletion chat(openai);
 OpenAI_AudioTranscription audio(openai);
 
-uint32_t lastButtonState = HIGH;
-uint32_t lastDebounce = 0;
-// Hold-to-record state machine (issue #9):
+// State machine (issue #9 + issue #13):
 //   IDLE      - waiting for a debounced button press
 //   RECORDING - button held: streaming I2S audio into the preallocated
 //               PSRAM buffer; LED on; stops on release / buffer full / cap
 //   SENDING   - patching the WAV header + uploading to LocalAI for
 //               transcription, then the LLM call (blocking)
-enum RecState { IDLE, RECORDING, SENDING };
+//   RESPONSE  - the LLM reply is shown as a scrollable window (issue #13):
+//               GPIO9 short = scroll down, GPIO11 short = scroll up,
+//               GPIO11 hold 5 s = back to IDLE, main button = new recording
+enum RecState { IDLE, RECORDING, SENDING, RESPONSE };
 RecState recState = IDLE;
+
+// Scrollable response view (issue #13): the reply is word-wrapped into this
+// static table and rendered as a RESPONSE_VISIBLE_LINES window below a
+// "Response: x/y" header. ~350 B of static RAM in total.
+char respLines[RESPONSE_MAX_LINES][RESPONSE_CHARS_PER_LINE + 1];
+int  respLineCount = 0;  // number of wrapped lines actually in use
+int  scrollOffset  = 0;  // index of the first visible line (0 .. max(0, count - RESPONSE_VISIBLE_LINES))
 
 // Preallocated recording buffer (44-byte WAV header + PCM audio) in PSRAM.
 // Allocated once in setup(), reused by every recording, never freed.
@@ -47,11 +55,37 @@ size_t rec_buf_bytes = 0;   // PCM capacity in bytes (without the 44-byte header
 size_t rec_pos = 0;         // bytes of PCM recorded in the current take
 unsigned long rec_start = 0;
 
-// WiFi-config button (WIFI_CONFIG_BUTTON_PIN): holding it for a while
-// wipes the stored WiFi credentials so the device reboots into AP mode.
-bool wifiBtnHeld = false;
-unsigned long wifiBtnPressStart = 0;
-const unsigned long WIFI_BTN_LONG_PRESS_MS = 5000; // 5 s hold → reset WiFi settings
+// Button press tracking (shared by the main + scroll buttons):
+//   pin        - the GPIO this button is wired to (set in setup())
+//   lastState  - last (debounced) level read
+//   pressStart - millis() when the current level was first seen
+//   longFired  - the 5 s long-press action already ran for this press
+//   acted      - the short-press action already ran for this press
+struct BtnState {
+  int pin = -1;
+  int lastState = HIGH;
+  unsigned long pressStart = 0;
+  bool longFired = false;
+  bool acted = false;
+};
+BtnState mainBtn, scrollUpBtn, scrollDownBtn;
+
+// Debounce: returns true once the button has been stably LOW for
+// BUTTON_DEBOUNCE_MS (i.e. after the press edge settles).
+bool buttonPressed(BtnState& b) {
+  int reading = digitalRead(b.pin);
+  if (reading != b.lastState) {
+    b.lastState = reading;
+    b.pressStart = millis();
+  }
+  return (b.lastState == LOW) && (millis() - b.pressStart) > BUTTON_DEBOUNCE_MS;
+}
+// 5 s long-press: true while held past the threshold and not yet fired.
+bool buttonLongPress(BtnState& b) {
+  return (b.lastState == LOW) && !b.longFired &&
+         (millis() - b.pressStart) >= BUTTON_LONG_PRESS_MS;
+}
+
 
 void combinedOutput(int x, int y, char* line, bool clrscr) {
   if(clrscr) {
@@ -61,6 +95,54 @@ void combinedOutput(int x, int y, char* line, bool clrscr) {
   display.setCursor(x, y);
   display.println(line);
   display.display();
+}
+
+// Word-wrap text into fixed-width lines (issue #13): one word per line
+// boundary, words longer than the line width are hard-broken, existing
+// newlines/tabs become line breaks. Returns the number of lines used.
+// Used by the scrollable response view (respLines[]) and reused by
+// displayError() for its detail text.
+int wrapText(const String& text, char lines[][RESPONSE_CHARS_PER_LINE + 1], int maxLines) {
+  int count = 0;
+  String word;
+  String line;
+  auto flushLine = [&]() {
+    if (line.length() && count < maxLines) {
+      line.toCharArray(lines[count], RESPONSE_CHARS_PER_LINE + 1);
+      count++;
+    }
+    line = "";
+  };
+  auto addWord = [&]() {
+    if (!word.length()) return;
+    if (word.length() > RESPONSE_CHARS_PER_LINE) {
+      // Hard-break an over-long word (no spaces to break on).
+      for (unsigned int i = 0; i < word.length(); i += RESPONSE_CHARS_PER_LINE) {
+        if (count >= maxLines) return;
+        String chunk = word.substring(i, i + RESPONSE_CHARS_PER_LINE);
+        chunk.toCharArray(lines[count], RESPONSE_CHARS_PER_LINE + 1);
+        count++;
+      }
+      word = "";
+      return;
+    }
+    if (line.length() && line.length() + word.length() + 1 > RESPONSE_CHARS_PER_LINE) flushLine();
+    if (line.length()) line += " ";
+    line += word;
+    word = "";
+  };
+  for (unsigned int i = 0; i < text.length() && count < maxLines; i++) {
+    char c = text.charAt(i);
+    if (c == ' ' || c == '\n' || c == '\t') {
+      addWord();
+      if (c == '\n' && count < maxLines) flushLine();
+    } else {
+      word += c;
+    }
+  }
+  addWord();
+  flushLine();
+  return count;
 }
 
 // Show an error on the OLED (title line 1, wrapped detail lines 2-4) and
@@ -80,39 +162,12 @@ void displayError(const String& title, const String& detail) {
   display.setCursor(0, 0);
   display.println(title);
 
-  String word;
-  String line;
-  int y = 16;
-  const int charsPerLine = 21; // 128 px / 6 px per char
-  const int maxLines = 3;
-  auto flushLine = [&]() {
-    if (line.length() && y < SCREEN_HEIGHT) {
-      display.setCursor(0, y);
-      display.println(line);
-      y += 16;
-      line = "";
-    }
-  };
-  for (unsigned int i = 0; i <= detail.length() && y < SCREEN_HEIGHT; i++) {
-    char c = detail.charAt(i);
-    if (c == ' ' || c == '\n' || c == '\t') {
-      if (word.length()) {
-        if (line.length() + word.length() > charsPerLine) flushLine();
-        if (line.length()) line += " ";
-        line += word;
-        word = "";
-      }
-      if (c == '\n') flushLine();
-    } else {
-      word += c;
-    }
+  char errLines[3][RESPONSE_CHARS_PER_LINE + 1];
+  int n = wrapText(detail, errLines, 3);
+  for (int i = 0; i < n; i++) {
+    display.setCursor(0, 16 + 16 * i);
+    display.println(errLines[i]);
   }
-  if (word.length()) {
-    if (line.length() + word.length() > charsPerLine) flushLine();
-    if (line.length()) line += " ";
-    line += word;
-  }
-  flushLine();
   display.display();
 }
 
@@ -179,6 +234,33 @@ void resetWifiSettingsAndRestart() {
 // ---------------------------------------------------------------------------
 
 void textGeneration(String prompt); // forward declaration (defined below)
+
+// Render the current response window (issue #13). The default font is
+// 6x8 px, so the 128x64 screen holds 21 chars x 8 lines. Line 0 is the
+// "Response: x/y" header (x = first visible line, y = total lines); the
+// next RESPONSE_VISIBLE_LINES lines are the window starting at
+// scrollOffset. Lines are printed consecutively (println auto-advances
+// 8 px), matching showWifiStatus().
+void renderResponseWindow() {
+  int total = respLineCount;
+  int maxOffset = (total > RESPONSE_VISIBLE_LINES) ? total - RESPONSE_VISIBLE_LINES : 0;
+  if (scrollOffset < 0) scrollOffset = 0;
+  if (scrollOffset > maxOffset) scrollOffset = maxOffset;
+
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.print(F("Response: "));
+  display.print(scrollOffset + 1);
+  display.print('/');
+  display.println(total); // newline -> next line (y=8)
+
+  for (int i = 0; i < RESPONSE_VISIBLE_LINES; i++) {
+    int idx = scrollOffset + i;
+    if (idx >= total) break;
+    display.println(respLines[idx]); // auto-advances 8 px per line
+  }
+  display.display();
+}
 
 // Allocate the recording buffer once (PSRAM) and write the 44-byte PCM WAV
 // header with placeholder sizes (patched per take by patchWavHeader()).
@@ -331,10 +413,14 @@ void textGeneration(String prompt) {
     return;
   }
 
-  char cresponse[response.length() + 1];
-  memcpy(cresponse, response.c_str(), response.length() + 1);
-  combinedOutput(0, 0, "Response: ", true);
-  combinedOutput(0, 16, cresponse, false);
+  // Store the reply in the static line table and switch to the scrollable
+  // RESPONSE view (issue #13) instead of dumping the raw text on the screen
+  // (which clipped everything below y=64).
+  respLineCount = wrapText(response, respLines, RESPONSE_MAX_LINES);
+  scrollOffset = 0;
+  renderResponseWindow();
+  recState = RESPONSE;
+  D_TDLN(F("response ready (scroll: GPIO9 down / GPIO11 up, hold GPIO11 5 s to exit)"));
 }
 
 void setup() {
@@ -343,8 +429,11 @@ void setup() {
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   pinMode(LED_PIN, OUTPUT);
   pinMode(WIFI_CONFIG_BUTTON_PIN, INPUT_PULLUP);
-  pinMode(RESERVE_BUTTON_PIN, INPUT_PULLUP);
-  D_TDLN(F("pin setup done (BUTTON_PIN, LED_PIN, WIFI_CONFIG_BUTTON_PIN, RESERVE_BUTTON_PIN)"));
+  pinMode(SCROLL_UP_PIN, INPUT_PULLUP);
+  mainBtn.pin = BUTTON_PIN;
+  scrollDownBtn.pin = WIFI_CONFIG_BUTTON_PIN;
+  scrollUpBtn.pin = SCROLL_UP_PIN;
+  D_TDLN(F("pin setup done (BUTTON_PIN, LED_PIN, WIFI_CONFIG_BUTTON_PIN, SCROLL_UP_PIN)"));
 
   // Register the LocalAI user settings BEFORE initialize() (library API
   // requirement). The config.h values are the initial defaults.
@@ -429,20 +518,36 @@ void loop() {
   // network and serves the setup page while in AP mode.
   wifiConfig.handle(10000);
 
-  // WiFi-config button: a 5 s long-press wipes the stored WiFi settings
-  // and reboots into the setup AP (escape hatch for a wrong password).
+  // Release detection: once a button is stably HIGH again, clear its
+  // one-shot flags so the next press can act (and the 5 s long-press can
+  // fire again). Checked for every button in every state.
+  for (BtnState* b : {&mainBtn, &scrollUpBtn, &scrollDownBtn}) {
+    if (digitalRead(b->pin) == HIGH && b->lastState == LOW) {
+      b->lastState = HIGH;
+      b->pressStart = millis();
+      b->acted = false;
+      b->longFired = false;
+    }
+  }
+
+  // WiFi-config button (GPIO9): a 5 s long-press wipes the stored WiFi
+  // settings and reboots into the setup AP (escape hatch for a wrong
+  // password). Checked in every state, before the state machine branches.
   if (digitalRead(WIFI_CONFIG_BUTTON_PIN) == LOW) {
-    if (!wifiBtnHeld) {
+    if (!scrollDownBtn.longFired && scrollDownBtn.lastState == HIGH) {
       D_TDLN(F("WiFi-config button pressed (hold 5 s to reset settings)"));
-      wifiBtnHeld = true;
-      wifiBtnPressStart = millis();
-    } else if ((millis() - wifiBtnPressStart) >= WIFI_BTN_LONG_PRESS_MS) {
+      scrollDownBtn.lastState = LOW;
+      scrollDownBtn.pressStart = millis();
+    }
+    if (buttonLongPress(scrollDownBtn)) {
       Serial.println(F("WiFi-config button held 5 s - resetting WiFi settings"));
       D_TDLN(F("WiFi-config button long-press: resetting WiFi settings and rebooting"));
       resetWifiSettingsAndRestart(); // does not return (reboots)
     }
   } else {
-    wifiBtnHeld = false;
+    scrollDownBtn.lastState = HIGH;
+    scrollDownBtn.longFired = false;
+    scrollDownBtn.acted = false;
   }
 
   // -----------------------------------------------------------------------
@@ -455,42 +560,32 @@ void loop() {
   // -----------------------------------------------------------------------
 
   if (recState == IDLE) {
-    int reading = digitalRead(BUTTON_PIN);
-
-    if (reading != lastButtonState) {
-      lastDebounce = millis();
-      lastButtonState = reading;
-    }
-
-    if ((millis() - lastDebounce) > 50) {
-      if (reading == LOW) { // Button is pushed (low due to pullup)
-        D_TDLN(F("button pressed (hold to record)"));
-        if (rec_buf == NULL) {
-          // Recording buffer allocation failed at boot: keep the error
-          // visible, do not start a take.
-          displayError(F("Record buffer alloc failed"),
-                      F("Recording is disabled. Reboot the device."));
-          lastButtonState = HIGH; // re-arm: only react to a fresh press
-          return;
-        }
-        if (wifiConfig.ESP_mode != AP_MODE && wifiConfig.wifi_connected) {
-          // Connected to a known network: start recording into the buffer.
-          showWifiStatus();
-          rec_pos = 0;
-          rec_start = millis();
-          recState = RECORDING;
-          digitalWrite(LED_PIN, HIGH);
-          display.clearDisplay();
-          display.setCursor(0, 0);
-          display.println(F("Recording"));
-          display.println(F("max 10 s"));
-          display.display();
-          D_TDLN(F("recording start (hold button, max 10 s)"));
-        } else {
-          // Not connected: keep showing the access point / connection status.
-          showWifiStatus();
-          lastButtonState = HIGH; // re-arm: only react to a fresh press
-        }
+    if (buttonPressed(mainBtn) && !mainBtn.acted) {
+      mainBtn.acted = true; // one action per press
+      D_TDLN(F("button pressed (hold to record)"));
+      if (rec_buf == NULL) {
+        // Recording buffer allocation failed at boot: keep the error
+        // visible, do not start a take.
+        displayError(F("Record buffer alloc failed"),
+                    F("Recording is disabled. Reboot the device."));
+        return;
+      }
+      if (wifiConfig.ESP_mode != AP_MODE && wifiConfig.wifi_connected) {
+        // Connected to a known network: start recording into the buffer.
+        showWifiStatus();
+        rec_pos = 0;
+        rec_start = millis();
+        recState = RECORDING;
+        digitalWrite(LED_PIN, HIGH);
+        display.clearDisplay();
+        display.setCursor(0, 0);
+        display.println(F("Recording"));
+        display.println(F("max 10 s"));
+        display.display();
+        D_TDLN(F("recording start (hold button, max 10 s)"));
+      } else {
+        // Not connected: keep showing the access point / connection status.
+        showWifiStatus();
       }
     }
     return;
@@ -528,8 +623,68 @@ void loop() {
     recState = SENDING;
   }
 
+  if (recState == RESPONSE) {
+    // Scrollable response view (issue #13).
+    // GPIO9 (scroll down): short press = next line; the 5 s long-press
+    // (WiFi reset) is already handled above in every state.
+    if (buttonPressed(scrollDownBtn) && !scrollDownBtn.acted) {
+      scrollDownBtn.acted = true;
+      if (scrollOffset < respLineCount - RESPONSE_VISIBLE_LINES) {
+        scrollOffset++;
+        renderResponseWindow();
+        D_TD(F("scroll down ")); D_TDLN(scrollOffset + 1);
+      }
+    }
+    // GPIO11 (scroll up): short press = previous line; 5 s hold = exit
+    // the response view back to IDLE.
+    if (buttonLongPress(scrollUpBtn)) {
+      scrollUpBtn.longFired = true;
+      Serial.println(F("Scroll-up button held 5 s - exiting response view"));
+      D_TDLN(F("scroll-up button long-press: back to IDLE"));
+      recState = IDLE;
+      showWifiStatus();
+      mainBtn.lastState = HIGH;
+      return;
+    }
+    if (buttonPressed(scrollUpBtn) && !scrollUpBtn.acted) {
+      scrollUpBtn.acted = true;
+      if (scrollOffset > 0) {
+        scrollOffset--;
+        renderResponseWindow();
+        D_TD(F("scroll up ")); D_TDLN(scrollOffset + 1);
+      }
+    }
+    // Main button: starts a new recording (same as in IDLE).
+    if (buttonPressed(mainBtn) && !mainBtn.acted) {
+      mainBtn.acted = true;
+      D_TDLN(F("button pressed (hold to record)"));
+      if (rec_buf == NULL) {
+        displayError(F("Record buffer alloc failed"),
+                    F("Recording is disabled. Reboot the device."));
+        return;
+      }
+      if (wifiConfig.ESP_mode != AP_MODE && wifiConfig.wifi_connected) {
+        showWifiStatus();
+        rec_pos = 0;
+        rec_start = millis();
+        recState = RECORDING;
+        digitalWrite(LED_PIN, HIGH);
+        display.clearDisplay();
+        display.setCursor(0, 0);
+        display.println(F("Recording"));
+        display.println(F("max 10 s"));
+        display.display();
+        D_TDLN(F("recording start (hold button, max 10 s)"));
+      } else {
+        showWifiStatus();
+      }
+    }
+    return;
+  }
+
   // SENDING (blocking: transcription + LLM call)
   sendRecording();
   recState = IDLE;
-  lastButtonState = HIGH; // re-arm the debounce for the next press
+  mainBtn.lastState = HIGH; // re-arm the debounce for the next press
+  mainBtn.acted = false;
 }
