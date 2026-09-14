@@ -1,9 +1,10 @@
+#pragma once
 // LocalAI endpoint + API key: initial defaults only.
 // They are registered as user settings of the ESP-Wifi-Config library
 // (LOCALAI_URL / LOCALAI_KEY) and can be changed at runtime on the web
 // setup page (Custom tab) - the stored values take precedence over these.
-const char* api_url = "http://192\.168\.1\.5:8080/v1/";
-const char* api_key = "sk1234567890";
+static const char* api_url = "http://192\.168\.1\.5:8080/v1/";
+static const char* api_key = "sk1234567890";
 
 // Base name of the access point broadcast while the device waits to be
 // configured. The full AP name is "<name>_<mac>", e.g. "TamAIgotchi_12345678".
