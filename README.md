@@ -15,6 +15,68 @@ It can be compiled and installed using the Arduino IDE
 - [Arduino IDE](https://docs.arduino.cc/software/ide/)
 - [Arduino-ESP32](https://docs.espressif.com/projects/arduino-esp32/en/latest/installing.html)
 
+## LocalAI Server Requirements
+
+TamAIgotchi talks to LocalAI through the OpenAI-compatible API. Two models are used, and the exact names are sent by the firmware:
+
+| Purpose | Endpoint | Model name sent | Set by |
+|---------|----------|-----------------|--------|
+| Speech-to-text | `POST /v1/audio/transcriptions` | `whisper-1` | hardcoded in the LocalAI-ESP32 library |
+| Chat completion | `POST /v1/chat/completions` | `gpt-4` | `TamAIgotchi.ino` (`chat.setModel("gpt-4")`) |
+
+Both requests carry an `Authorization: Bearer <api_key>` header, so the key configured on the ESP32 (default `sk1234567890` in `config.h`, changeable on the setup page) must match the one LocalAI is started with. If LocalAI runs without `LOCALAI_API_KEY`, any value works.
+
+### 1. `whisper-1` — speech-to-text
+
+The transcription model name is hardcoded to `whisper-1` in the library, so you need a model registered under exactly that name. LocalAI serves whisper through the `whisper` (whisper.cpp) backend:
+
+1. Install the backend:
+
+   ```bash
+   local-ai backends install whisper
+   ```
+
+2. Download a whisper.cpp weight file into the `models` folder (example: `whisper-base.en`):
+
+   ```bash
+   mkdir -p models
+   wget https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin -O models/whisper-base.en
+   ```
+
+3. Register it as `whisper-1` (e.g. in `models/whisper-1.yaml`):
+
+   ```yaml
+   name: whisper-1
+   backend: whisper
+   parameters:
+     model: whisper-base.en
+   ```
+
+### 2. `gpt-4` — chat completion
+
+Any small LLM works — it just has to be **named** `gpt-4` (or aliased to that name). Example with Llama 3.2 1B:
+
+1. Install the backend:
+
+   ```bash
+   local-ai backends install llama-cpp
+   ```
+
+2. Download a GGUF weight file into the `models` folder (example: `llama-3.2-1b`):
+
+   ```bash
+   wget https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf -O models/llama-3.2-1b
+   ```
+
+3. Alias it to `gpt-4` (e.g. in `models/gpt-4.yaml`):
+
+   ```yaml
+   name: gpt-4
+   backend: llama-cpp
+   parameters:
+     model: llama-3.2-1b
+   ```
+
 ## Connection Diagram
 
 ![Fritzing Connection Diagram](diagram/TamAIgotchi.png)
