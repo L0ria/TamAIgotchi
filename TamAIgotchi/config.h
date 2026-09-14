@@ -77,3 +77,26 @@ const char* api_key = "sk1234567890";
 // Button timing (all buttons): 50 ms debounce, 5 s long-press threshold.
 #define BUTTON_DEBOUNCE_MS 50
 #define BUTTON_LONG_PRESS_MS 5000
+
+// ---------------------------------------------------------------------------
+// Idle animation (issue #16): a small pixel-art alien (24x22 px, 4 hand-
+// drawn frames in alien.h, ~264 B of flash, 0 B of RAM) entertains the
+// screen after ALIEN_IDLE_TIMEOUT_MS without any button press. It stays in
+// the lower-left quadrant (x < 64, y >= 32, well under a quarter of the
+// screen). Loop (70 s cycle): bubble 4 s -> jump & wave 16 s -> bubble 4 s
+// -> jump & wave 16 s -> stand still 30 s. Any button press stops it.
+//   ALIEN_IDLE_TIMEOUT_MS     - start the animation after this much inactivity
+//   ALIEN_RESPONSE_TIMEOUT_MS - after the response has been shown this long
+//                               (and no button press), go back to the animation
+//   ALIEN_BUBBLE_MS           - duration of the speech-bubble phase ("hello")
+//   ALIEN_WAVE_MS             - duration of the jump & wave phase
+//   ALIEN_STAND_MS            - duration of the standing-still phase
+//   ALIEN_FRAME_MS            - sprite frame swap interval during the wave phase
+//   ALIEN_BUBBLE_TEXT         - text shown in the speech bubble (configurable)
+#define ALIEN_IDLE_TIMEOUT_MS     60000UL
+#define ALIEN_RESPONSE_TIMEOUT_MS 60000UL
+#define ALIEN_BUBBLE_MS           4000UL
+#define ALIEN_WAVE_MS             16000UL
+#define ALIEN_STAND_MS            30000UL
+#define ALIEN_FRAME_MS            250UL
+#define ALIEN_BUBBLE_TEXT "hello"

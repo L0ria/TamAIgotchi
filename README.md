@@ -153,6 +153,20 @@ The LLM response can be longer than what fits on the 128×64 display. It is show
 
 Both scroll buttons are only active while the response is on screen; during recording / sending they are ignored.
 
+### Idle animation
+
+After 60 s without any button press (and while WiFi is connected), a small pixel-art alien appears in the lower-left corner of the display and loops between:
+
+1. a speech bubble saying `hello` (4 s),
+2. jumping up and down while waving (16 s),
+3. a speech bubble saying `hello` (4 s),
+4. jumping and waving (16 s),
+5. standing still (30 s).
+
+Any button press stops the animation immediately and returns to the normal record → transcribe → prompt → response flow. After the response has been shown for 60 s without a button press, the animation loop starts again.
+
+All timings and the bubble text are configurable via the `ALIEN_*` defines in `TamAIgotchi/config.h` (e.g. `ALIEN_BUBBLE_TEXT`).
+
 ## Debug output
 
 The sketch can print a detailed serial trace of every step (boot, pin setup, LocalAI settings, OLED init, WiFi mode, I2S init, recording size, transcription/prompt/response lengths, button events) prefixed with `[DEBUG]`.
