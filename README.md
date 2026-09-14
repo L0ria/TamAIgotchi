@@ -79,6 +79,18 @@ Hold the button to record: the LED lights up and the microphone records audio fo
 When you release the button (or the 10 s limit is reached), the recording is sent to your LocalAI whisper model and gets transcoded into a text.
 The text then is sent as prompt to the LocalAI gpt4 model and the response is shown on the oled display.
 
+### Scrolling the response
+
+The LLM response can be longer than what fits on the 128×64 display. It is shown as a scrollable window with a `Response: x/y` header (current line / total lines). Use the two side buttons to scroll:
+
+| Button | Short press | Long press (5 s) |
+|---|---|---|
+| **GPIO9** | scroll **down** one line | reset WiFi settings & reboot into the setup AP (existing behavior) |
+| **GPIO11** | scroll **up** one line | exit the response view back to the idle screen |
+| **GPIO3** (main) | start a new recording (same as when idle) | — (hold-to-record) |
+
+Both scroll buttons are only active while the response is on screen; during recording / sending they are ignored.
+
 ## Debug output
 
 The sketch can print a detailed serial trace of every step (boot, pin setup, LocalAI settings, OLED init, WiFi mode, I2S init, recording size, transcription/prompt/response lengths, button events) prefixed with `[DEBUG]`.

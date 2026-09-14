@@ -59,5 +59,21 @@ const char* api_key = "sk1234567890";
 #define BUTTON_PIN  3     // Button → GND (INPUT_PULLUP)
 #define LED_PIN     12
 
-#define WIFI_CONFIG_BUTTON_PIN 9   // Hold 5 s → reset saved WiFi settings & start the setup AP (Button → GND, INPUT_PULLUP)
-#define RESERVE_BUTTON_PIN 11      // Reserved, unused for now (Button → GND, INPUT_PULLUP)
+// The two side buttons (issue #13): a short press scrolls the response
+// view, a 5 s hold is an escape hatch. Both are wired to GND (INPUT_PULLUP).
+#define WIFI_CONFIG_BUTTON_PIN 9   // short: scroll response down · hold 5 s → reset saved WiFi settings & start the setup AP (existing behavior)
+#define SCROLL_DOWN_PIN  9   // same physical button as WIFI_CONFIG_BUTTON_PIN (alias, issue #13)
+#define SCROLL_UP_PIN 11     // short: scroll response up (was RESERVE_BUTTON_PIN) · hold 5 s → exit the response view
+
+// Scrollable response view (issue #13): the LLM reply is word-wrapped into
+// a static line table and shown as a RESPONSE_VISIBLE_LINES window below a
+// "Response: x/y" header (x = first visible line, y = total lines).
+// 16 lines x 22 bytes ≈ 350 B of static RAM — a generous upper bound for a
+// 40-token answer (~330 chars at most).
+#define RESPONSE_CHARS_PER_LINE 21  // 128 px / 6 px per char (font size 1)
+#define RESPONSE_VISIBLE_LINES 6   // 8 display lines: 1 header + 1 blank separator + 6 response lines
+#define RESPONSE_MAX_LINES 16      // capacity of the static line table
+
+// Button timing (all buttons): 50 ms debounce, 5 s long-press threshold.
+#define BUTTON_DEBOUNCE_MS 50
+#define BUTTON_LONG_PRESS_MS 5000
