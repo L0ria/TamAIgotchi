@@ -682,9 +682,13 @@ void loop() {
     return;
   }
 
-  // SENDING (blocking: transcription + LLM call)
+  // SENDING (blocking: transcription + LLM call). On success textGeneration()
+  // already switched us to the RESPONSE view; on any error it stays in
+  // SENDING, in which case we fall back to IDLE.
   sendRecording();
-  recState = IDLE;
-  mainBtn.lastState = HIGH; // re-arm the debounce for the next press
-  mainBtn.acted = false;
+  if (recState != RESPONSE) {
+    recState = IDLE;
+    mainBtn.lastState = HIGH; // re-arm the debounce for the next press
+    mainBtn.acted = false;
+  }
 }
