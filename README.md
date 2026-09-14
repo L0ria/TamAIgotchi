@@ -77,28 +77,6 @@ Any small LLM works — it just has to be **named** `gpt-4` (or aliased to that 
      model: llama-3.2-1b
    ```
 
-### Quick start
-
-```bash
-# backends
-local-ai backends install whisper
-local-ai backends install llama-cpp
-
-# weights
-mkdir -p models
-wget https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin -O models/whisper-base.en
-wget https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf -O models/llama-3.2-1b
-
-# model configs (see the YAML files above)
-#   models/whisper-1.yaml -> name: whisper-1, backend: whisper,   parameters.model: whisper-base.en
-#   models/gpt-4.yaml     -> name: gpt-4,     backend: llama-cpp, parameters.model: llama-3.2-1b
-
-# start LocalAI (optionally with an API key)
-LOCALAI_API_KEY=sk1234567890 local-ai run
-```
-
-Then point the ESP32 at `http://<server-ip>:8080/v1/` on the setup page.
-
 ## Connection Diagram
 
 ![Fritzing Connection Diagram](diagram/TamAIgotchi.png)
