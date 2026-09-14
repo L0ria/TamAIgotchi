@@ -237,10 +237,10 @@ void textGeneration(String prompt); // forward declaration (defined below)
 
 // Render the current response window (issue #13). The default font is
 // 6x8 px, so the 128x64 screen holds 21 chars x 8 lines. Line 0 is the
-// "Response: x/y" header (x = first visible line, y = total lines); the
-// next RESPONSE_VISIBLE_LINES lines are the window starting at
-// scrollOffset. Lines are printed consecutively (println auto-advances
-// 8 px), matching showWifiStatus().
+// "Response: x/y" header (x = first visible line, y = total lines); line 1
+// is a blank separator; the next RESPONSE_VISIBLE_LINES lines are the
+// window starting at scrollOffset. Lines are printed consecutively
+// (println auto-advances 8 px), matching showWifiStatus().
 void renderResponseWindow() {
   int total = respLineCount;
   int maxOffset = (total > RESPONSE_VISIBLE_LINES) ? total - RESPONSE_VISIBLE_LINES : 0;
@@ -253,6 +253,7 @@ void renderResponseWindow() {
   display.print(scrollOffset + 1);
   display.print('/');
   display.println(total); // newline -> next line (y=8)
+  display.println();      // blank separator line (y=16)
 
   for (int i = 0; i < RESPONSE_VISIBLE_LINES; i++) {
     int idx = scrollOffset + i;

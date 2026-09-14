@@ -71,7 +71,7 @@ const char* api_key = "sk1234567890";
 // 16 lines x 22 bytes ≈ 350 B of static RAM — a generous upper bound for a
 // 40-token answer (~330 chars at most).
 #define RESPONSE_CHARS_PER_LINE 21  // 128 px / 6 px per char (font size 1)
-#define RESPONSE_VISIBLE_LINES 7   // 8 display lines: 1 header + 7 response lines
+#define RESPONSE_VISIBLE_LINES 6   // 8 display lines: 1 header + 1 blank separator + 6 response lines
 #define RESPONSE_MAX_LINES 16      // capacity of the static line table
 
 // Button timing (all buttons): 50 ms debounce, 5 s long-press threshold.
