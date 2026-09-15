@@ -9,7 +9,7 @@
 //
 // The `chat` / `audio` OpenAI clients, the scrollable-response table
 // (respLines[] / respLineCount / scrollOffset), renderResponseWindow() and
-// markAlienActivity() are declared in TamAIgotchi.ino and referenced via
+// alien.markActivity() are declared in TamAIgotchi.ino and referenced via
 // extern (see recorder.cpp). The shared `display` object is used by the
 // text_utils helpers these functions call.
 #pragma once
