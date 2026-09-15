@@ -1,36 +1,23 @@
-#include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
-#include <WiFi.h>
-#include <ESPWifiConfig.h>
-#include "ESP_I2S.h"
-#include <OpenAI.h>
-#include "config.h"
-#include "alien.h"
-#include "text_utils.h"
-#include "buttons.h"
-#include "recorder.h"
-
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
-I2SClass i2s;
-
-// WiFi credentials are stored by the ESP-Wifi-Config library (flash/EEPROM)
-// instead of being hardcoded. When no known network is reachable the device
-// drops into AP mode and serves a web setup page to configure the WiFi.
-ESPWifiConfig wifiConfig(WIFI_AP_NAME, WIFI_SETUP_PORT, -1, false, "", "", true);
-
-// The LocalAI endpoint + API key are user-defined settings of this same
-// library (v2.3.0+): they are registered in setup() before initialize(),
-// stored in the library's flash slots, editable on the setup page (Custom
-// tab) and read back via getSetting(). The constants in config.h only act
-// as initial defaults (first boot / after a full reset).
+// TamAIgotchi - ESP32 based client for LocalAI (app shell).
 //
-// The OpenAI client is (re)built in setup() from the stored settings after
-// wifiConfig.initialize() (the library reboots the device after a save on
-// the setup page, so the values read there are always up to date).
-OpenAI openai("", "");
-OpenAI_ChatCompletion chat(openai);
-OpenAI_AudioTranscription audio(openai);
+// Step 5 of the refactoring proposed in issue #18: this file now only
+// contains setup() + loop() (plus the state-machine globals the modules
+// share via extern). Everything else lives in dedicated modules:
+//   hardware.h   - shared objects (display, i2s, wifiConfig, openai/chat/audio)
+//                  + hardwareInit() (pinMode + OLED + I2S bring-up)
+//   display.h    - showWifiStatus() / resetWifiSettingsAndRestart() /
+//                  renderResponseWindow() / startRecording() (dedup)
+//   recorder.h   - PSRAM recording buffer + SENDING/RESPONSE flow
+//   alien.h      - the idle-alien animation (issue #16)
+//   buttons.h    - the debounced buttons (step 2)
+//   text_utils.h - combinedOutput() / wrapText() / displayError() (step 1)
+#include "hardware.h"   // shared hardware objects + hardwareInit()
+#include "display.h"    // showWifiStatus() / resetWifiSettingsAndRestart() /
+                        // renderResponseWindow() / startRecording()
+#include "buttons.h"    // Button instances
+#include "recorder.h"   // Recorder + RecState
+#include "alien.h"      // AlienAnimation
+#include "text_utils.h" // displayError()
 
 // State machine (issue #9 + issue #13):
 //   IDLE      - waiting for a debounced button press
@@ -74,107 +61,16 @@ Recorder recorder;
 // See alien.h.
 AlienAnimation alien;
 
-
-// Show the current WiFi situation on the display (and Serial).
-//  - AP mode:    show the access point name + IP so it can be configured
-//  - connected:  show the IP address assigned by the router
-//  - otherwise:  show that it is still trying to connect
-void showWifiStatus() {
-  display.clearDisplay();
-  display.setCursor(0, 0);
-
-  if (wifiConfig.ESP_mode == AP_MODE) {
-    display.println(F("No WiFi connected"));
-    display.println(F("Join AP:"));
-    display.println(wifiConfig.get_AP_name());
-    display.print(F("IP: "));
-    display.println(wifiConfig.ESP_IP.toString());
-    display.print(F("Port: "));
-    display.println(WIFI_SETUP_PORT);
-    Serial.print(F("AP name: "));
-    Serial.println(wifiConfig.get_AP_name());
-    Serial.print(F("Setup URL: http://"));
-    Serial.print(wifiConfig.ESP_IP.toString());
-    Serial.print(F(":"));
-    Serial.println(WIFI_SETUP_PORT);
-  } else if (wifiConfig.wifi_connected) {
-    display.println(F("WiFi connected"));
-    display.print(F("SSID: "));
-    display.println(WiFi.SSID());
-    display.print(F("IP: "));
-    display.println(wifiConfig.ESP_IP.toString());
-    Serial.print(F("Connected to "));
-    Serial.print(WiFi.SSID());
-    Serial.print(F(" IP: "));
-    Serial.println(wifiConfig.ESP_IP.toString());
-  } else {
-    display.println(F("Connecting to WiFi..."));
-    Serial.println(F("Connecting to WiFi..."));
-  }
-  display.display();
-  alien.markActivity(); // issue #16: showWifiStatus() is always the result of
-                       // a button press (or boot) - re-arm the idle timer
-}
-
-// Escape hatch: wipe the stored WiFi (and web) credentials and reboot.
-// With no saved SSID the library drops into AP mode, so the device
-// comes back up serving the setup page again. Used by the 5 s
-// long-press of the WiFi-config button when a wrong password was saved
-// and the device would otherwise keep retrying forever.
-// resetAllSettings() covers all registered settings (built-in + the LocalAI
-// URL/key user slots), so the config.h defaults come back after the reboot.
-void resetWifiSettingsAndRestart() {
-  wifiConfig.resetAllSettings(); // public library helper (v2.3.0), all settings
-  Serial.println(F("WiFi settings reset. Rebooting into setup AP mode..."));
-  display.clearDisplay();
-  display.setCursor(0, 0);
-  display.println(F("WiFi settings reset."));
-  display.println(F("Rebooting to setup..."));
-  display.display();
-  delay(300);
-  ESP.restart();
-}
-
-// ---------------------------------------------------------------------------
-// Hold-to-record (issue #9): helpers
-// ---------------------------------------------------------------------------
-
-// Render the current response window (issue #13). The default font is
-// 6x8 px, so the 128x64 screen holds 21 chars x 8 lines. Line 0 is the
-// "Response: x/y" header (x = first visible line, y = total lines); line 1
-// is a blank separator; the next RESPONSE_VISIBLE_LINES lines are the
-// window starting at scrollOffset. Lines are printed consecutively
-// (println auto-advances 8 px), matching showWifiStatus().
-void renderResponseWindow() {
-  int total = respLineCount;
-  int maxOffset = (total > RESPONSE_VISIBLE_LINES) ? total - RESPONSE_VISIBLE_LINES : 0;
-  if (scrollOffset < 0) scrollOffset = 0;
-  if (scrollOffset > maxOffset) scrollOffset = maxOffset;
-
-  display.clearDisplay();
-  display.setCursor(0, 0);
-  display.print(F("Response: "));
-  display.print(scrollOffset + 1);
-  display.print('/');
-  display.println(total); // newline -> next line (y=8)
-  display.println();      // blank separator line (y=16)
-
-  for (int i = 0; i < RESPONSE_VISIBLE_LINES; i++) {
-    int idx = scrollOffset + i;
-    if (idx >= total) break;
-    display.println(respLines[idx]); // auto-advances 8 px per line
-  }
-  display.display();
-}
-
 void setup() {
   Serial.begin(115200);
   D_TDLN(F("setup() start"));
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
-  pinMode(LED_PIN, OUTPUT);
-  pinMode(WIFI_CONFIG_BUTTON_PIN, INPUT_PULLUP);
-  pinMode(SCROLL_UP_PIN, INPUT_PULLUP);
-  D_TDLN(F("pin setup done (BUTTON_PIN, LED_PIN, WIFI_CONFIG_BUTTON_PIN, SCROLL_UP_PIN)"));
+
+  // Hardware bring-up (step 5 of the refactoring, issue #18): pinMode +
+  // OLED init + I2S init, moved to hardwareInit() (hardware.h).
+  if (!hardwareInit()) {
+    return; // I2S failed to initialize - the error is already on the display
+  }
+  D_TDLN(F("hardware init done (pins, OLED, I2S)"));
 
   // Register the LocalAI user settings BEFORE initialize() (library API
   // requirement). The config.h values are the initial defaults.
@@ -183,16 +79,6 @@ void setup() {
   if (wifiConfig.addSetting("LOCALAI_KEY", api_key) < 0)
     Serial.println(F("WARNING: could not register LOCALAI_KEY setting"));
   D_TDLN(F("LocalAI settings registered (LOCALAI_URL, LOCALAI_KEY)"));
-
-/* setup display*/
-  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3D for 128x64
-    Serial.println(F("SSD1306 allocation failed"));
-    for(;;);
-  }
-  D_TDLN(F("OLED display initialized (SSD1306 @ 0x3C)"));
-  display.setTextSize(1);
-  display.setTextColor(WHITE);
-  display.clearDisplay();
 
 /* connect to WiFi (or start the setup access point) */
   combinedOutput(0, 0, "Connecting to WiFi", true);
@@ -204,16 +90,6 @@ void setup() {
 
   D_TD(F("WiFi mode after initialize(): "));
   D_TDLN(wifiConfig.ESP_mode == AP_MODE ? "AP (setup page)" : "STA");
-
-/* setup i2s */  
-  combinedOutput(0, 0, "Initializing I2S bus...", true);
-  i2s.setPins(I2S_SCK, I2S_WS, -1, I2S_DIN);
-  if (!i2s.begin(I2S_MODE_STD, 16000, I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_MONO, I2S_STD_SLOT_LEFT)) {
-    combinedOutput(0, 16, "Failed to initialize I2S bus!", false);
-    return;
-  }
-  combinedOutput(0, 16, "I2S bus initialized.", false);
-  D_TDLN(F("I2S bus initialized (16 kHz, 32-bit, mono, slot left)"));
 
 /* allocate the hold-to-record buffer once (PSRAM), before the OpenAI client
    so the upload buffer is sized with the recording buffer already in place */
@@ -297,31 +173,7 @@ void loop() {
       // Issue #16: a press is activity - stop the animation (if running) and
       // re-arm the inactivity timer.
       alien.markActivity();
-      D_TDLN(F("button pressed (hold to record)"));
-      if (recorder.rec_buf == NULL) {
-        // Recording buffer allocation failed at boot: keep the error
-        // visible, do not start a take.
-        displayError(F("Record buffer alloc failed"),
-                    F("Recording is disabled. Reboot the device."));
-        return;
-      }
-      if (wifiConfig.ESP_mode != AP_MODE && wifiConfig.wifi_connected) {
-        // Connected to a known network: start recording into the buffer.
-        showWifiStatus();
-        recorder.rec_pos = 0;
-        recorder.rec_start = millis();
-        recState = RECORDING;
-        digitalWrite(LED_PIN, HIGH);
-        display.clearDisplay();
-        display.setCursor(0, 0);
-        display.println(F("Recording"));
-        display.println(F("max 10 s"));
-        display.display();
-        D_TDLN(F("recording start (hold button, max 10 s)"));
-      } else {
-        // Not connected: keep showing the access point / connection status.
-        showWifiStatus();
-      }
+      startRecording();         // deduped block (display.h); shows the error / AP status
     }
     return;
   }
@@ -397,27 +249,7 @@ void loop() {
     // Main button: starts a new recording (same as in IDLE).
     if (mainBtn.isPressed()) {
       alien.markActivity();
-      D_TDLN(F("button pressed (hold to record)"));
-      if (recorder.rec_buf == NULL) {
-        displayError(F("Record buffer alloc failed"),
-                    F("Recording is disabled. Reboot the device."));
-        return;
-      }
-      if (wifiConfig.ESP_mode != AP_MODE && wifiConfig.wifi_connected) {
-        showWifiStatus();
-        recorder.rec_pos = 0;
-        recorder.rec_start = millis();
-        recState = RECORDING;
-        digitalWrite(LED_PIN, HIGH);
-        display.clearDisplay();
-        display.setCursor(0, 0);
-        display.println(F("Recording"));
-        display.println(F("max 10 s"));
-        display.display();
-        D_TDLN(F("recording start (hold button, max 10 s)"));
-      } else {
-        showWifiStatus();
-      }
+      startRecording(); // deduped block (display.h); shows the error / AP status
     }
     return;
   }
