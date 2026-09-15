@@ -1,0 +1,140 @@
+// OLED display helpers (extracted from TamAIgotchi.ino as step 5 of the
+// refactoring proposed in issue #18).
+#include "display.h"
+#include <Arduino.h>  // Serial, String, F(), pinMode, digitalWrite, delay, ESP.restart()
+#include <Adafruit_SSD1306.h>  // for the shared `display` object
+#include <ESPWifiConfig.h>     // for the shared `wifiConfig` object
+#include "alien.h"      // AlienAnimation (markActivity re-arms the idle timer)
+#include "recorder.h"   // Recorder (startRecording() touches rec_buf / rec_pos / rec_start)
+#include "text_utils.h" // displayError()
+
+// Shared objects + state (defined in hardware.h / owned by the sketch);
+// referenced here instead of passed through every call - the same pattern
+// as text_utils.cpp / alien.cpp / recorder.cpp.
+extern Adafruit_SSD1306 display;
+extern ESPWifiConfig wifiConfig;
+extern Recorder recorder;
+extern RecState recState;
+extern AlienAnimation alien;
+extern char respLines[RESPONSE_MAX_LINES][RESPONSE_CHARS_PER_LINE + 1];
+extern int respLineCount;
+extern int scrollOffset;
+
+// Show the current WiFi situation on the display (and Serial).
+//  - AP mode:    show the access point name + IP so it can be configured
+//  - connected:  show the IP address assigned by the router
+//  - otherwise:  show that it is still trying to connect
+void showWifiStatus() {
+  display.clearDisplay();
+  display.setCursor(0, 0);
+
+  if (wifiConfig.ESP_mode == AP_MODE) {
+    display.println(F("No WiFi connected"));
+    display.println(F("Join AP:"));
+    display.println(wifiConfig.get_AP_name());
+    display.print(F("IP: "));
+    display.println(wifiConfig.ESP_IP.toString());
+    display.print(F("Port: "));
+    display.println(WIFI_SETUP_PORT);
+    Serial.print(F("AP name: "));
+    Serial.println(wifiConfig.get_AP_name());
+    Serial.print(F("Setup URL: http://"));
+    Serial.print(wifiConfig.ESP_IP.toString());
+    Serial.print(F(":"));
+    Serial.println(WIFI_SETUP_PORT);
+  } else if (wifiConfig.wifi_connected) {
+    display.println(F("WiFi connected"));
+    display.print(F("SSID: "));
+    display.println(WiFi.SSID());
+    display.print(F("IP: "));
+    display.println(wifiConfig.ESP_IP.toString());
+    Serial.print(F("Connected to "));
+    Serial.print(WiFi.SSID());
+    Serial.print(F(" IP: "));
+    Serial.println(wifiConfig.ESP_IP.toString());
+  } else {
+    display.println(F("Connecting to WiFi..."));
+    Serial.println(F("Connecting to WiFi..."));
+  }
+  display.display();
+  alien.markActivity(); // issue #16: showWifiStatus() is always the result of
+                       // a button press (or boot) - re-arm the idle timer
+}
+
+// Escape hatch: wipe the stored WiFi (and web) credentials and reboot.
+// With no saved SSID the library drops into AP mode, so the device
+// comes back up serving the setup page again. Used by the 5 s
+// long-press of the WiFi-config button when a wrong password was saved
+// and the device would otherwise keep retrying forever.
+// resetAllSettings() covers all registered settings (built-in + the LocalAI
+// URL/key user slots), so the config.h defaults come back after the reboot.
+void resetWifiSettingsAndRestart() {
+  wifiConfig.resetAllSettings(); // public library helper (v2.3.0), all settings
+  Serial.println(F("WiFi settings reset. Rebooting into setup AP mode..."));
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.println(F("WiFi settings reset."));
+  display.println(F("Rebooting to setup..."));
+  display.display();
+  delay(300);
+  ESP.restart();
+}
+
+// Render the current response window (issue #13). The default font is
+// 6x8 px, so the 128x64 screen holds 21 chars x 8 lines. Line 0 is the
+// "Response: x/y" header (x = first visible line, y = total lines); line 1
+// is a blank separator; the next RESPONSE_VISIBLE_LINES lines are the
+// window starting at scrollOffset. Lines are printed consecutively
+// (println auto-advances 8 px), matching showWifiStatus().
+void renderResponseWindow() {
+  int total = respLineCount;
+  int maxOffset = (total > RESPONSE_VISIBLE_LINES) ? total - RESPONSE_VISIBLE_LINES : 0;
+  if (scrollOffset < 0) scrollOffset = 0;
+  if (scrollOffset > maxOffset) scrollOffset = maxOffset;
+
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.print(F("Response: "));
+  display.print(scrollOffset + 1);
+  display.print('/');
+  display.println(total); // newline -> next line (y=8)
+  display.println();      // blank separator line (y=16)
+
+  for (int i = 0; i < RESPONSE_VISIBLE_LINES; i++) {
+    int idx = scrollOffset + i;
+    if (idx >= total) break;
+    display.println(respLines[idx]); // auto-advances 8 px per line
+  }
+  display.display();
+}
+
+// Start a new recording take (dedupes the ~15-line block that used to be
+// copied verbatim in the IDLE and RESPONSE branches of loop()).
+bool startRecording() {
+  D_TDLN(F("button pressed (hold to record)"));
+  if (recorder.rec_buf == NULL) {
+    // Recording buffer allocation failed at boot: keep the error
+    // visible, do not start a take.
+    displayError(F("Record buffer alloc failed"),
+                F("Recording is disabled. Reboot the device."));
+    return false;
+  }
+  if (wifiConfig.ESP_mode != AP_MODE && wifiConfig.wifi_connected) {
+    // Connected to a known network: start recording into the buffer.
+    showWifiStatus();
+    recorder.rec_pos = 0;
+    recorder.rec_start = millis();
+    recState = RECORDING;
+    digitalWrite(LED_PIN, HIGH);
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.println(F("Recording"));
+    display.println(F("max 10 s"));
+    display.display();
+    D_TDLN(F("recording start (hold button, max 10 s)"));
+    return true;
+  }
+  // Not connected: keep showing the access point / connection status.
+  showWifiStatus();
+  return false;
+}
