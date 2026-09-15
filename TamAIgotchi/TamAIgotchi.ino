@@ -9,6 +9,7 @@
 #include "config.h"
 #include "alien.h"
 #include "text_utils.h"
+#include "buttons.h"
 #include <string.h>  // strlen (speech-bubble width from ALIEN_BUBBLE_TEXT)
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
@@ -73,36 +74,12 @@ size_t rec_buf_bytes = 0;   // PCM capacity in bytes (without the 44-byte header
 size_t rec_pos = 0;         // bytes of PCM recorded in the current take
 unsigned long rec_start = 0;
 
-// Button press tracking (shared by the main + scroll buttons):
-//   pin        - the GPIO this button is wired to (set in setup())
-//   lastState  - last (debounced) level read
-//   pressStart - millis() when the current level was first seen
-//   longFired  - the 5 s long-press action already ran for this press
-//   acted      - the short-press action already ran for this press
-struct BtnState {
-  int pin = -1;
-  int lastState = HIGH;
-  unsigned long pressStart = 0;
-  bool longFired = false;
-  bool acted = false;
-};
-BtnState mainBtn, scrollUpBtn, scrollDownBtn;
-
-// Debounce: returns true once the button has been stably LOW for
-// BUTTON_DEBOUNCE_MS (i.e. after the press edge settles).
-bool buttonPressed(BtnState& b) {
-  int reading = digitalRead(b.pin);
-  if (reading != b.lastState) {
-    b.lastState = reading;
-    b.pressStart = millis();
-  }
-  return (b.lastState == LOW) && (millis() - b.pressStart) > BUTTON_DEBOUNCE_MS;
-}
-// 5 s long-press: true while held past the threshold and not yet fired.
-bool buttonLongPress(BtnState& b) {
-  return (b.lastState == LOW) && !b.longFired &&
-         (millis() - b.pressStart) >= BUTTON_LONG_PRESS_MS;
-}
+// Buttons (step 2 of the refactoring, issue #18): one Button instance per
+// physical button. update() is called once per loop() pass for every
+// button before reading isPressed() / isLongPressed() (see buttons.h).
+Button mainBtn(BUTTON_PIN);
+Button scrollUpBtn(SCROLL_UP_PIN);
+Button scrollDownBtn(WIFI_CONFIG_BUTTON_PIN);
 
 // ---------------------------------------------------------------------------
 // Idle animation (issue #16): helpers
@@ -465,9 +442,6 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   pinMode(WIFI_CONFIG_BUTTON_PIN, INPUT_PULLUP);
   pinMode(SCROLL_UP_PIN, INPUT_PULLUP);
-  mainBtn.pin = BUTTON_PIN;
-  scrollDownBtn.pin = WIFI_CONFIG_BUTTON_PIN;
-  scrollUpBtn.pin = SCROLL_UP_PIN;
   D_TDLN(F("pin setup done (BUTTON_PIN, LED_PIN, WIFI_CONFIG_BUTTON_PIN, SCROLL_UP_PIN)"));
 
   // Register the LocalAI user settings BEFORE initialize() (library API
@@ -572,36 +546,20 @@ void loop() {
   }
   alienUpdate();
 
-  // Release detection: once a button is stably HIGH again, clear its
-  // one-shot flags so the next press can act (and the 5 s long-press can
-  // fire again). Checked for every button in every state.
-  for (BtnState* b : {&mainBtn, &scrollUpBtn, &scrollDownBtn}) {
-    if (digitalRead(b->pin) == HIGH && b->lastState == LOW) {
-      b->lastState = HIGH;
-      b->pressStart = millis();
-      b->acted = false;
-      b->longFired = false;
-    }
-  }
+  // Debounce edge-detect for all buttons (step 2, issue #18): call once
+  // per loop() pass for every button, before reading isPressed() /
+  // isLongPressed().
+  mainBtn.update();
+  scrollUpBtn.update();
+  scrollDownBtn.update();
 
   // WiFi-config button (GPIO9): a 5 s long-press wipes the stored WiFi
   // settings and reboots into the setup AP (escape hatch for a wrong
   // password). Checked in every state, before the state machine branches.
-  if (digitalRead(WIFI_CONFIG_BUTTON_PIN) == LOW) {
-    if (!scrollDownBtn.longFired && scrollDownBtn.lastState == HIGH) {
-      D_TDLN(F("WiFi-config button pressed (hold 5 s to reset settings)"));
-      scrollDownBtn.lastState = LOW;
-      scrollDownBtn.pressStart = millis();
-    }
-    if (buttonLongPress(scrollDownBtn)) {
-      Serial.println(F("WiFi-config button held 5 s - resetting WiFi settings"));
-      D_TDLN(F("WiFi-config button long-press: resetting WiFi settings and rebooting"));
-      resetWifiSettingsAndRestart(); // does not return (reboots)
-    }
-  } else {
-    scrollDownBtn.lastState = HIGH;
-    scrollDownBtn.longFired = false;
-    scrollDownBtn.acted = false;
+  if (scrollDownBtn.isLongPressed()) {
+    Serial.println(F("WiFi-config button held 5 s - resetting WiFi settings"));
+    D_TDLN(F("WiFi-config button long-press: resetting WiFi settings and rebooting"));
+    resetWifiSettingsAndRestart(); // does not return (reboots)
   }
 
   // -----------------------------------------------------------------------
@@ -614,8 +572,7 @@ void loop() {
   // -----------------------------------------------------------------------
 
   if (recState == IDLE) {
-    if (buttonPressed(mainBtn) && !mainBtn.acted) {
-      mainBtn.acted = true; // one action per press
+    if (mainBtn.isPressed()) {  // one action per press (debounced)
       // Issue #16: a press is activity - stop the animation (if running) and
       // re-arm the inactivity timer.
       markAlienActivity();
@@ -686,8 +643,7 @@ void loop() {
     // (if running) and restarts the auto-return timer.
     // GPIO9 (scroll down): short press = next line; the 5 s long-press
     // (WiFi reset) is already handled above in every state.
-    if (buttonPressed(scrollDownBtn) && !scrollDownBtn.acted) {
-      scrollDownBtn.acted = true;
+    if (scrollDownBtn.isPressed()) {
       markAlienActivity();
       if (scrollOffset < respLineCount - RESPONSE_VISIBLE_LINES) {
         scrollOffset++;
@@ -699,17 +655,15 @@ void loop() {
     }
     // GPIO11 (scroll up): short press = previous line; 5 s hold = exit
     // the response view back to IDLE.
-    if (buttonLongPress(scrollUpBtn)) {
-      scrollUpBtn.longFired = true;
+    if (scrollUpBtn.isLongPressed()) {
       Serial.println(F("Scroll-up button held 5 s - exiting response view"));
       D_TDLN(F("scroll-up button long-press: back to IDLE"));
       recState = IDLE;
       showWifiStatus(); // also marks activity (issue #16)
-      mainBtn.lastState = HIGH;
+      mainBtn.reset(); // re-arm the main button for the next press
       return;
     }
-    if (buttonPressed(scrollUpBtn) && !scrollUpBtn.acted) {
-      scrollUpBtn.acted = true;
+    if (scrollUpBtn.isPressed()) {
       markAlienActivity();
       if (scrollOffset > 0) {
         scrollOffset--;
@@ -720,8 +674,7 @@ void loop() {
       renderResponseWindow();
     }
     // Main button: starts a new recording (same as in IDLE).
-    if (buttonPressed(mainBtn) && !mainBtn.acted) {
-      mainBtn.acted = true;
+    if (mainBtn.isPressed()) {
       markAlienActivity();
       D_TDLN(F("button pressed (hold to record)"));
       if (rec_buf == NULL) {
@@ -754,8 +707,7 @@ void loop() {
   sendRecording();
   if (recState != RESPONSE) {
     recState = IDLE;
-    mainBtn.lastState = HIGH; // re-arm the debounce for the next press
-    mainBtn.acted = false;
+    mainBtn.reset(); // re-arm the debounce for the next press
     markAlienActivity(); // issue #16: re-arm the idle-animation timer
   }
 }
