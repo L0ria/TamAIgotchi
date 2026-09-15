@@ -4,12 +4,12 @@
 #include <WiFi.h>
 #include <ESPWifiConfig.h>
 #include "ESP_I2S.h"
-#include "esp_heap_caps.h"  // heap_caps_malloc / heap_caps_get_free_size (PSRAM recording buffer)
 #include <OpenAI.h>
 #include "config.h"
 #include "alien.h"
 #include "text_utils.h"
 #include "buttons.h"
+#include "recorder.h"
 #include <string.h>  // strlen (speech-bubble width from ALIEN_BUBBLE_TEXT)
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
@@ -42,8 +42,7 @@ OpenAI_AudioTranscription audio(openai);
 //   RESPONSE  - the LLM reply is shown as a scrollable window (issue #13):
 //               GPIO9 short = scroll down, GPIO11 short = scroll up,
 //               GPIO11 hold 5 s = back to IDLE, main button = new recording
-enum RecState { IDLE, RECORDING, SENDING, RESPONSE };
-RecState recState = IDLE;
+RecState recState = IDLE;  // app state machine (issue #9 + #13); shared with the recorder (recorder.h)
 
 // ---------------------------------------------------------------------------
 // Idle animation (issue #16): a small pixel-art alien that entertains the
@@ -67,19 +66,17 @@ char respLines[RESPONSE_MAX_LINES][RESPONSE_CHARS_PER_LINE + 1];
 int  respLineCount = 0;  // number of wrapped lines actually in use
 int  scrollOffset  = 0;  // index of the first visible line (0 .. max(0, count - RESPONSE_VISIBLE_LINES))
 
-// Preallocated recording buffer (44-byte WAV header + PCM audio) in PSRAM.
-// Allocated once in setup(), reused by every recording, never freed.
-uint8_t *rec_buf = NULL;
-size_t rec_buf_bytes = 0;   // PCM capacity in bytes (without the 44-byte header)
-size_t rec_pos = 0;         // bytes of PCM recorded in the current take
-unsigned long rec_start = 0;
-
 // Buttons (step 2 of the refactoring, issue #18): one Button instance per
 // physical button. update() is called once per loop() pass for every
 // button before reading isPressed() / isLongPressed() (see buttons.h).
 Button mainBtn(BUTTON_PIN);
 Button scrollUpBtn(SCROLL_UP_PIN);
 Button scrollDownBtn(WIFI_CONFIG_BUTTON_PIN);
+
+// Recorder (step 3 of the refactoring, issue #18): owns the preallocated
+// PSRAM recording buffer + the SENDING/RESPONSE flow (recorder.initRecBuffer /
+// recorder.sendRecording / textGeneration). See recorder.h.
+Recorder recorder;
 
 // ---------------------------------------------------------------------------
 // Idle animation (issue #16): helpers
@@ -98,7 +95,7 @@ void markAlienActivity() {
 // The animation only runs while the device is fully usable: STA mode,
 // connected, and the recording buffer allocated (see issue #16 answers).
 bool alienCanAnimate() {
-  return (rec_buf != NULL) &&
+  return (recorder.rec_buf != NULL) &&
          (wifiConfig.ESP_mode != AP_MODE) &&
          wifiConfig.wifi_connected;
 }
@@ -240,8 +237,6 @@ void resetWifiSettingsAndRestart() {
 // Hold-to-record (issue #9): helpers
 // ---------------------------------------------------------------------------
 
-void textGeneration(String prompt); // forward declaration (defined below)
-
 // Render the current response window (issue #13). The default font is
 // 6x8 px, so the 128x64 screen holds 21 chars x 8 lines. Line 0 is the
 // "Response: x/y" header (x = first visible line, y = total lines); line 1
@@ -268,171 +263,6 @@ void renderResponseWindow() {
     display.println(respLines[idx]); // auto-advances 8 px per line
   }
   display.display();
-}
-
-// Allocate the recording buffer once (PSRAM) and write the 44-byte PCM WAV
-// header with placeholder sizes (patched per take by patchWavHeader()).
-// The buffer is reused by every recording and never freed.
-// Returns true on success; on failure the error is shown on the display
-// (no fallback to the old fixed 5 s recording).
-bool initRecBuffer() {
-  // Steady-state free memory after WiFi + web server + I2S are up.
-  size_t free_mem = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
-  bool have_psram = (free_mem > 0);
-  if (!have_psram) {
-    free_mem = esp_get_free_heap_size(); // fallback: internal heap
-  }
-
-  // 16 kHz * 32-bit * mono = 65536 bytes of PCM per second (fixed HW config).
-  size_t cap = (size_t)MAX_REC_SECONDS * 65536;
-  size_t margin = (size_t)REC_SAFETY_MARGIN_KB * 1024;
-  if (free_mem > margin + 44) {
-    size_t avail = free_mem - margin - 44;
-    if (avail < cap) cap = avail;
-  } else {
-    cap = 0;
-  }
-
-  D_TD(F("rec buffer: free_mem="));
-  D_TDDEC(free_mem);
-  D_TD(F(" psram="));
-  D_TDLN(have_psram ? "yes" : "no");
-
-  if (cap == 0) {
-    displayError(F("Record buffer alloc failed"),
-                F("Not enough free memory for the recording buffer."));
-    return false;
-  }
-
-  rec_buf = (uint8_t *)heap_caps_malloc(cap + 44,
-                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-  if (rec_buf == NULL && !have_psram) {
-    rec_buf = (uint8_t *)malloc(cap + 44);
-  }
-  if (rec_buf == NULL) {
-    displayError(F("Record buffer alloc failed"),
-                F("heap_caps_malloc failed for the recording buffer."));
-    return false;
-  }
-
-  rec_buf_bytes = cap;
-
-  // 44-byte PCM WAV header (16 kHz, 32-bit, mono) with placeholder sizes.
-  // Layout (little-endian): "RIFF" | riff_size | "WAVE" | "fmt " | 16 | 1 |
-  //   1 | 16000 | 64000 | 4 | 32 | "data" | data_size
-  const uint8_t hdr[44] = {
-    'R', 'I', 'F', 'F', 0, 0, 0, 0,          // riff_size patched per take
-    'W', 'A', 'V', 'E',
-    'f', 'm', 't', ' ', 16, 0, 0, 0,         // fmt subchunk size = 16
-    1, 0,                                    // audio format: PCM
-    1, 0,                                    // channels: mono
-    0x00, 0x3E, 0x00, 0x00,                  // sample rate: 16000
-    0x00, 0xFC, 0x00, 0x00,                  // byte rate: 64000
-    4, 0,                                    // block align
-    32, 0,                                   // bits per sample
-    'd', 'a', 't', 'a', 0, 0, 0, 0           // data_size patched per take
-  };
-  memcpy(rec_buf, hdr, 44);
-
-  D_TD(F("rec buffer: "));
-  D_TDDEC(cap);
-  D_TD(F(" bytes PCM = "));
-  D_TDDEC(cap / 65536);
-  D_TDLN(F(" s max"));
-  return true;
-}
-
-// Fill in the two size fields of the preallocated WAV header for the
-// current take (both little-endian uint32_t):
-//   offset 4  -> RIFF chunk size = rec_pos + 36
-//   offset 40 -> data chunk size = rec_pos
-void patchWavHeader(size_t pcm_bytes) {
-  uint32_t riff_size = pcm_bytes + 36;
-  rec_buf[4]  = (uint8_t)(riff_size & 0xFF);
-  rec_buf[5]  = (uint8_t)((riff_size >> 8) & 0xFF);
-  rec_buf[6]  = (uint8_t)((riff_size >> 16) & 0xFF);
-  rec_buf[7]  = (uint8_t)((riff_size >> 24) & 0xFF);
-  rec_buf[40] = (uint8_t)(pcm_bytes & 0xFF);
-  rec_buf[41] = (uint8_t)((pcm_bytes >> 8) & 0xFF);
-  rec_buf[42] = (uint8_t)((pcm_bytes >> 16) & 0xFF);
-  rec_buf[43] = (uint8_t)((pcm_bytes >> 24) & 0xFF);
-}
-
-// SENDING state: patch the header, transcribe the take, run the LLM call.
-// Returns true if a transcription was produced (false = error already shown).
-bool sendRecording() {
-  patchWavHeader(rec_pos);
-  D_TD(F("sending "));
-  D_TDDEC(rec_pos);
-  D_TDLN(F(" bytes of PCM ("));
-  D_TDDEC((unsigned)(rec_pos / 65536));
-  D_TDLN(F(" s of audio)"));
-
-  combinedOutput(0, 0, "Sending audio", true);
-  String transcription = audio.file(rec_buf, 44 + rec_pos, OPENAI_AUDIO_INPUT_FORMAT_WAV);
-  log_d(transcription);
-  D_TD(F("transcription length: "));
-  D_TDLN(transcription.length());
-
-  // The library swallows HTTP failures (unreachable host, server error,
-  // model not installed) and just returns an empty string. Make that
-  // visible instead of sending an empty prompt to the LLM.
-  transcription.trim();
-  if (transcription.length() == 0) {
-    displayError(F("Transcription failed"),
-                F("LocalAI unreachable or returned an error. Check LOCALAI_URL in the setup page (Custom tab)."));
-    return false;
-  }
-
-  textGeneration(transcription);
-  return true;
-}
-
-void textGeneration(String prompt) {
-  char cprompt[prompt.length() + 1];
-  memcpy(cprompt, prompt.c_str(), prompt.length() + 1);
-  D_TD(F("prompt length: "));
-  D_TDLN(prompt.length());
-  combinedOutput(0, 0, "Sending prompt", true);
-  combinedOutput(0, 16, cprompt, false);
-
-  OpenAI_StringResponse result = chat.message(prompt);
-  Serial.printf("Received message. Tokens: %u\n", result.tokens());
-  D_TD(F("response length: "));
-  D_TDLN(String(result.getAt(0)).length());
-
-  // Check the error FIRST: on failure the library returns an empty
-  // response plus the server's error text (e.g. "The model 'gpt-4' does
-  // not exist"), which we must not swallow into a blank display.
-  if (result.error()) {
-    displayError(F("LLM error"), String(result.error()));
-    return;
-  }
-
-  String response = result.getAt(0);
-  response.trim();
-  response.replace("\n", " ");
-  log_d(response);
-
-  if (response.length() == 0) {
-    // HTTP 200 but no content (e.g. an unexpected response shape).
-    displayError(F("Empty response"),
-                F("LocalAI returned no text. Check the model and its settings."));
-    return;
-  }
-
-  // Store the reply in the static line table and switch to the scrollable
-  // RESPONSE view (issue #13) instead of dumping the raw text on the screen
-  // (which clipped everything below y=64).
-  respLineCount = wrapText(response, respLines, RESPONSE_MAX_LINES);
-  scrollOffset = 0;
-  renderResponseWindow();
-  recState = RESPONSE;
-  // Issue #16: re-arm the inactivity timer so the animation returns
-  // ALIEN_RESPONSE_TIMEOUT_MS after the response has been shown without a
-  // button press (driven from loop() via markAlienActivity()).
-  markAlienActivity();
-  D_TDLN(F("response ready (scroll: GPIO9 down / GPIO11 up, hold GPIO11 5 s to exit)"));
 }
 
 void setup() {
@@ -485,7 +315,7 @@ void setup() {
 
 /* allocate the hold-to-record buffer once (PSRAM), before the OpenAI client
    so the upload buffer is sized with the recording buffer already in place */
-  if (!initRecBuffer()) {
+  if (!recorder.initRecBuffer()) {
     // No fallback to the old fixed 5 s recording: the error is already on
     // the display. Recording stays disabled until the device is rebooted
     // with enough free memory.
@@ -577,7 +407,7 @@ void loop() {
       // re-arm the inactivity timer.
       markAlienActivity();
       D_TDLN(F("button pressed (hold to record)"));
-      if (rec_buf == NULL) {
+      if (recorder.rec_buf == NULL) {
         // Recording buffer allocation failed at boot: keep the error
         // visible, do not start a take.
         displayError(F("Record buffer alloc failed"),
@@ -587,8 +417,8 @@ void loop() {
       if (wifiConfig.ESP_mode != AP_MODE && wifiConfig.wifi_connected) {
         // Connected to a known network: start recording into the buffer.
         showWifiStatus();
-        rec_pos = 0;
-        rec_start = millis();
+        recorder.rec_pos = 0;
+        recorder.rec_start = millis();
         recState = RECORDING;
         digitalWrite(LED_PIN, HIGH);
         display.clearDisplay();
@@ -607,19 +437,19 @@ void loop() {
 
   if (recState == RECORDING) {
     // Stream I2S audio into the preallocated buffer (blocking, ~97 ms).
-    size_t n = i2s.readBytes((char *)(rec_buf + 44 + rec_pos), REC_CHUNK_BYTES);
-    rec_pos += n;
+    size_t n = i2s.readBytes((char *)(recorder.rec_buf + 44 + recorder.rec_pos), REC_CHUNK_BYTES);
+    recorder.rec_pos += n;
 
     // Stop conditions (checked after every chunk):
     bool stop = false;
     if (digitalRead(BUTTON_PIN) != LOW) {
       D_TDLN(F("button released - stopping recording"));
       stop = true;
-    } else if (rec_pos >= rec_buf_bytes) {
+    } else if (recorder.rec_pos >= recorder.rec_buf_bytes) {
       Serial.println(F("Recording buffer full - stopping"));
       D_TDLN(F("recording buffer full - stopping"));
       stop = true;
-    } else if ((millis() - rec_start) >= (unsigned long)MAX_REC_SECONDS * 1000UL) {
+    } else if ((millis() - recorder.rec_start) >= (unsigned long)MAX_REC_SECONDS * 1000UL) {
       Serial.println(F("Max recording time reached - stopping"));
       D_TDLN(F("max recording time reached - stopping"));
       stop = true;
@@ -632,7 +462,7 @@ void loop() {
     // Recording finished: hand over to the send flow.
     digitalWrite(LED_PIN, LOW);
     D_TD(F("recorded "));
-    D_TDDEC(rec_pos);
+    D_TDDEC(recorder.rec_pos);
     D_TDLN(F(" bytes of PCM"));
     recState = SENDING;
   }
@@ -677,15 +507,15 @@ void loop() {
     if (mainBtn.isPressed()) {
       markAlienActivity();
       D_TDLN(F("button pressed (hold to record)"));
-      if (rec_buf == NULL) {
+      if (recorder.rec_buf == NULL) {
         displayError(F("Record buffer alloc failed"),
                     F("Recording is disabled. Reboot the device."));
         return;
       }
       if (wifiConfig.ESP_mode != AP_MODE && wifiConfig.wifi_connected) {
         showWifiStatus();
-        rec_pos = 0;
-        rec_start = millis();
+        recorder.rec_pos = 0;
+        recorder.rec_start = millis();
         recState = RECORDING;
         digitalWrite(LED_PIN, HIGH);
         display.clearDisplay();
@@ -704,7 +534,7 @@ void loop() {
   // SENDING (blocking: transcription + LLM call). On success textGeneration()
   // already switched us to the RESPONSE view; on any error it stays in
   // SENDING, in which case we fall back to IDLE.
-  sendRecording();
+  recorder.sendRecording();
   if (recState != RESPONSE) {
     recState = IDLE;
     mainBtn.reset(); // re-arm the debounce for the next press
