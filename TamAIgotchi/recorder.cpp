@@ -1,6 +1,7 @@
 // Recording buffer + transcription + LLM text generation (extracted from
 // TamAIgotchi.ino as step 3 of the refactoring proposed in issue #18).
 #include "recorder.h"
+#include "alien.h"   // AlienAnimation (markActivity on response ready)
 #include <Arduino.h>  // String, Serial, F(), memcpy
 #include <esp_heap_caps.h>  // heap_caps_malloc / heap_caps_get_free_size (PSRAM recording buffer)
 #include <OpenAI.h>  // OpenAI_ChatCompletion / OpenAI_AudioTranscription / OpenAI_StringResponse / log_d
@@ -13,7 +14,7 @@ extern char respLines[RESPONSE_MAX_LINES][RESPONSE_CHARS_PER_LINE + 1];
 extern int respLineCount;
 extern int scrollOffset;
 extern void renderResponseWindow();
-extern void markAlienActivity();
+extern AlienAnimation alien;  // markActivity() on response ready
 extern OpenAI_ChatCompletion chat;
 extern OpenAI_AudioTranscription audio;
 
@@ -181,7 +182,7 @@ void Recorder::textGeneration(const String& prompt) {
   recState = RESPONSE;
   // Issue #16: re-arm the inactivity timer so the animation returns
   // ALIEN_RESPONSE_TIMEOUT_MS after the response has been shown without a
-  // button press (driven from loop() via markAlienActivity()).
-  markAlienActivity();
+  // button press (driven from loop() via alien.markActivity()).
+  alien.markActivity();
   D_TDLN(F("response ready (scroll: GPIO9 down / GPIO11 up, hold GPIO11 5 s to exit)"));
 }

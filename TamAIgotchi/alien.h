@@ -51,3 +51,59 @@ static const uint8_t alienFrameWaveDown[66] = {
 static const uint8_t* const alienFrameData[4] = {
   alienFrameStand, alienFrameWaveUp, alienFrameJump, alienFrameWaveDown
 };
+
+// ---------------------------------------------------------------------------
+// Idle-alien animation (issue #16) — the state machine + rendering (extracted
+// from TamAIgotchi.ino as step 4 of the refactoring proposed in issue #18).
+//
+// The AlienAnimation class owns the 6 animation state variables and the
+// markAlienActivity() / alienCanAnimate() / renderAlien() / renderAlienScene()
+// / alienUpdate() helpers. The sketch (TamAIgotchi.ino) owns the instance and
+// calls:
+//   alien.markActivity()  - on every button press (stops the animation +
+//                           restarts the inactivity timers)
+//   alien.update()        - once per loop() pass (starts on idle timeout +
+//                           advances the 70 s loop)
+//
+// The shared `display` object + the recorder (for canAnimate(): the
+// recording buffer + the app state, for the response timeout) are
+// referenced via extern (see alien.cpp).
+// ---------------------------------------------------------------------------
+
+// Animation state (moved here from TamAIgotchi.ino).
+enum AlienState { ANIM_IDLE, ANIM_ACTIVE };
+
+class AlienAnimation {
+ public:
+  // Any button press is activity: it stops the animation and restarts the
+  // inactivity timers (both the idle start and the response auto-return).
+  void markActivity();
+
+  // The animation only runs while the device is fully usable: STA mode,
+  // connected, and the recording buffer allocated (see issue #16 answers).
+  bool canAnimate() const;
+
+  // Starts the animation (call when the idle timeout elapses).
+  void start();
+
+  // Advance the 70 s loop (bubble / wave / stand phases) + swap the sprite
+  // frame during the wave phases. Call once per loop() pass.
+  void update();
+
+  // The current animation state (ANIM_IDLE / ANIM_ACTIVE).
+  AlienState state() const { return alienState; }
+
+ private:
+  // Draw one alien sprite at (x, y) using the Adafruit_GFX 1-bit format.
+  void renderAlien(int frame, int x, int y);
+  // Render the current animation scene (bubble / wave / stand).
+  void renderAlienScene();
+
+  // The 6 animation state variables (moved here from the .ino globals).
+  AlienState alienState = ANIM_IDLE;
+  unsigned long alienStateStart = 0;   // millis() when the current phase started
+  unsigned long alienActivityMs = 0;   // millis() of the last button press
+  int alienPhase = 0;                  // 0=bubble, 1=wave, 2=bubble, 3=wave, 4=stand
+  int alienFrame = 0;                  // current sprite frame index (0..3)
+  unsigned long alienFrameMs = 0;      // millis() of the last frame swap
+};
