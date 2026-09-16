@@ -13,12 +13,12 @@
 //
 //   statusShow(l1, l2="")  - the two status lines (y=0 / y=8), each
 //                            truncated to STATUS_CHARS_PER_LINE, both
-//                            mirrored to Serial, then display.display()
+//                            mirrored to Serial, then the single render
+//                            pass renderScreen() (issue #35, step 5)
 //   statusError(title, detail) - 2-line error form: line 1 = title,
 //                            line 2 = detail (truncated); the FULL title
 //                            + detail always go to Serial
-//   statusClear()          - blank the two lines (helper for the single
-//                            render pass that arrives in step 5)
+//   statusClear()          - blank the two lines + renderScreen()
 //
 // The shared `display` object is referenced via extern, the same pattern
 // as the other modules (bubble.cpp / text_utils.cpp / alien.cpp /
@@ -29,13 +29,18 @@
 
 class String;  // forward declaration (complete type via <Arduino.h> in the .cpp)
 
+// Draw the two stored status lines at the top of the screen (line 1 at
+// y=0, line 2 at y=8) into the current frame. No Serial, no panel push -
+// called by renderScreen() (issue #35, step 5) on every frame.
+void statusShow();
+
 // Render the two status lines at the top of the screen (line 1 at y=0,
-// line 2 at y=8) and mirror BOTH lines to Serial, then flush the panel.
+// line 2 at y=8), mirror BOTH lines to Serial, then push the full frame
+// through the single render pass renderScreen() (issue #35, step 5).
 // Each line is truncated to STATUS_CHARS_PER_LINE (21 chars) - the two
 // lines are blanked (not cleared) first, so the rest of the frame
-// (alien / bubble) is preserved. No clearDisplay() (the single render
-// pass arrives in step 5). The 1-arg overload is the same call with an
-// empty line 2 (no default argument: String is only forward-declared
+// (alien / bubble) is preserved. The 1-arg overload is the same call with
+// an empty line 2 (no default argument: String is only forward-declared
 // here, so the empty-string temporary is built in the .cpp).
 void statusShow(const String& l1, const String& l2);
 void statusShow(const String& l1);
@@ -45,6 +50,6 @@ void statusShow(const String& l1);
 // Serial (the truncated on-screen text is not enough to debug with).
 void statusError(const String& title, const String& detail);
 
-// Blank the two status lines and flush the panel (helper for the single
-// render pass in step 5).
+// Blank the two status lines and push the frame through the single render
+// pass (issue #35, step 5).
 void statusClear();
