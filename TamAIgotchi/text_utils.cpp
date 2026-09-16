@@ -21,33 +21,38 @@ void combinedOutput(int x, int y, char* line, bool clrscr) {
 // Word-wrap text into fixed-width lines (issue #13): one word per line
 // boundary, words longer than the line width are hard-broken, existing
 // newlines/tabs become line breaks. Returns the number of lines used.
-// Used by the scrollable response view (respLines[]) and reused by
-// displayError() for its detail text.
-int wrapText(const String& text, char lines[][RESPONSE_CHARS_PER_LINE + 1], int maxLines) {
+//
+// Core (4-arg) form (issue #31, step 1 of 6 of the UI restructure in #29):
+// the output is a pointer array so the line width is not baked into the
+// array type. Each out[i] must point to a buffer of at least `width + 1`
+// chars (the caller owns the storage). Used by the scrollable response
+// view (respLines[]), the speech-bubble widget (bubble.cpp) and
+// displayError().
+int wrapText(const String& text, char* out[], int width, int maxLines) {
   int count = 0;
   String word;
   String line;
   auto flushLine = [&]() {
     if (line.length() && count < maxLines) {
-      line.toCharArray(lines[count], RESPONSE_CHARS_PER_LINE + 1);
+      line.toCharArray(out[count], width + 1);
       count++;
     }
     line = "";
   };
   auto addWord = [&]() {
     if (!word.length()) return;
-    if (word.length() > RESPONSE_CHARS_PER_LINE) {
+    if (word.length() > width) {
       // Hard-break an over-long word (no spaces to break on).
-      for (unsigned int i = 0; i < word.length(); i += RESPONSE_CHARS_PER_LINE) {
+      for (unsigned int i = 0; i < word.length(); i += width) {
         if (count >= maxLines) return;
-        String chunk = word.substring(i, i + RESPONSE_CHARS_PER_LINE);
-        chunk.toCharArray(lines[count], RESPONSE_CHARS_PER_LINE + 1);
+        String chunk = word.substring(i, i + width);
+        chunk.toCharArray(out[count], width + 1);
         count++;
       }
       word = "";
       return;
     }
-    if (line.length() && line.length() + word.length() + 1 > RESPONSE_CHARS_PER_LINE) flushLine();
+    if (line.length() && line.length() + word.length() + 1 > width) flushLine();
     if (line.length()) line += " ";
     line += word;
     word = "";
@@ -64,6 +69,15 @@ int wrapText(const String& text, char lines[][RESPONSE_CHARS_PER_LINE + 1], int 
   addWord();
   flushLine();
   return count;
+}
+
+// 3-arg convenience form (the original signature, issue #13): wraps at
+// RESPONSE_CHARS_PER_LINE. Kept so the current callers (displayError() and
+// recorder.cpp, both passing a 2-D char array) are untouched (issue #31).
+int wrapText(const String& text, char lines[][RESPONSE_CHARS_PER_LINE + 1], int maxLines) {
+  char* out[RESPONSE_MAX_LINES];
+  for (int i = 0; i < maxLines; i++) out[i] = lines[i];
+  return wrapText(text, out, RESPONSE_CHARS_PER_LINE, maxLines);
 }
 
 // Show an error on the OLED (title line 1, wrapped detail lines 2-4) and
