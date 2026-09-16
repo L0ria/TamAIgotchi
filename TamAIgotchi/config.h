@@ -53,6 +53,14 @@ static const char* api_key = "sk1234567890";
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
 
+// Status bar (issue #32, step 2 of 6 of the UI restructure in #29):
+// the top two lines of the 128x64 panel (y=0 and y=8) are reserved
+// for status (WiFi state, I2S bring-up, boot errors). At font size 1
+// each char is 6 px wide, so a line holds 128 / 6 = 21 chars - status
+// messages must fit 21 chars x 2 lines (issue #29: never rely on the
+// SSD1306 driver clipping).
+#define STATUS_CHARS_PER_LINE 21  // 128 px / 6 px per char (font size 1)
+
 #define I2S_DIN     5     // DATA IN
 #define I2S_WS      18     // LRCLK
 #define I2S_SCK     16     // BCLK
