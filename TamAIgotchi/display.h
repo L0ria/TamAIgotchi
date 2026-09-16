@@ -3,14 +3,13 @@
 //
 //   showWifiStatus()           - the AP / connected / connecting status screen
 //   resetWifiSettingsAndRestart() - 5 s hold escape hatch: wipe settings, reboot
-//   renderResponseWindow()     - the scrollable "Response: x/y" window (issue #13)
 //   startRecording()           - the shared "start a take" block (dedupes the
 //                                IDLE and RESPONSE branches of loop())
 //
-// All four use the shared `display` / `wifiConfig` objects (defined in
-// hardware.h, referenced via extern in display.cpp) and the scrollable
-// response table (respLines[] / respLineCount / scrollOffset, owned by the
-// sketch and shared via extern - see recorder.h for the same pattern).
+// All three use the shared `display` / `wifiConfig` objects (defined in
+// hardware.h, referenced via extern in display.cpp) and the speech-bubble
+// widget (bubble.{h,cpp}, issue #31 - startRecording() clears it when a
+// new take starts from the RESPONSE state, issue #34, step 4).
 #pragma once
 
 #include "config.h"      // RESPONSE_*, LED_PIN, D_T*()
@@ -35,14 +34,6 @@ void showWifiStatus();
 // URL/key user slots), so the config.h defaults come back after the reboot.
 // Does not return (ESP.restart()).
 void resetWifiSettingsAndRestart();
-
-// Render the current response window (issue #13). The default font is
-// 6x8 px, so the 128x64 screen holds 21 chars x 8 lines. Line 0 is the
-// "Response: x/y" header (x = first visible line, y = total lines); line 1
-// is a blank separator; the next RESPONSE_VISIBLE_LINES lines are the
-// window starting at scrollOffset. Lines are printed consecutively
-// (println auto-advances 8 px), matching showWifiStatus().
-void renderResponseWindow();
 
 // Start a new recording take (dedupes the ~15-line block that used to be
 // copied verbatim in the IDLE and RESPONSE branches of loop()): reset the

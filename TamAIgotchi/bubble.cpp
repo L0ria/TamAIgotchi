@@ -49,6 +49,21 @@ void bubbleClear() {
 int bubbleLineCount() { return bubbleCount; }
 int bubbleScrollOffset() { return bubbleOffset; }
 
+// Jump the scroll offset to the start (first line) or the end (last
+// visible window). The double-press jump (issue #34, step 4 of 6 of the
+// UI restructure in #29 - option A from #29 Q7): the same scroll button
+// pressed twice within ~500 ms jumps to the start / end so long answers
+// (~50+ wrapped lines) can be reached without ~45 single presses.
+void bubbleJumpTo(bool toEnd) {
+  if (toEnd) {
+    bubbleOffset = (bubbleCount > BUBBLE_VISIBLE_LINES)
+                 ? bubbleCount - BUBBLE_VISIBLE_LINES
+                 : 0;
+  } else {
+    bubbleOffset = 0;
+  }
+}
+
 // Draw the bubble rectangle (always, even when empty) + the tail triangle
 // + the visible BUBBLE_VISIBLE_LINES window of the table into the current
 // frame. No clearDisplay() / display() of its own (the single render pass
@@ -56,6 +71,11 @@ int bubbleScrollOffset() { return bubbleOffset; }
 void bubbleRender() {
   // The bubble rectangle - always the same size, always drawn (issue #29 Q8).
   display.drawRect(BUBBLE_X, BUBBLE_Y, BUBBLE_W, BUBBLE_H, WHITE);
+
+  // Clear the interior before re-drawing the visible window: the bubble is
+  // re-rendered in place on every scroll / jump (issue #34, step 4), so a
+  // jump back up must not leave stale text from a longer window behind.
+  display.fillRect(BUBBLE_X + 1, BUBBLE_Y + 1, BUBBLE_W - 2, BUBBLE_H - 2, BLACK);
 
   // Tail: a small ~4 px filled triangle from the bubble's left edge
   // (x = BUBBLE_X = 30) toward the alien (x 4..27), vertically centered-ish

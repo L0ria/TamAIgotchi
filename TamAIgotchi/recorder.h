@@ -7,13 +7,12 @@
 //   sendRecording()  - patch header + transcribe + LLM call (blocking)
 //   textGeneration() - the LLM call + store the reply into the response table
 //
-// The `chat` / `audio` OpenAI clients, the scrollable-response table
-// (respLines[] / respLineCount / scrollOffset), renderResponseWindow() and
-// alien.markActivity() are declared in TamAIgotchi.ino and referenced via
-// extern (see recorder.cpp). Status + bubble rendering goes through
-// statusbar.{h,cpp} (statusShow/statusError, issue #33, step 3) and
-// bubble.{h,cpp} (bubbleSetText/bubbleRender - the prompt text, issue #33),
-// which use the shared `display` object.
+// The `chat` / `audio` OpenAI clients and alien.markActivity() are declared
+// in TamAIgotchi.ino and referenced via extern (see recorder.cpp). Status
+// + bubble rendering goes through statusbar.{h,cpp} (statusShow/statusError,
+// issue #33, step 3) and bubble.{h,cpp} (bubbleSetText/bubbleRender - the
+// prompt text, issue #33, and the response text, issue #34, step 4), which
+// use the shared `display` object.
 #pragma once
 #include <cstddef>  // size_t
 #include <cstdint>  // uint8_t

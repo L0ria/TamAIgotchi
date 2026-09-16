@@ -26,7 +26,7 @@ void combinedOutput(int x, int y, char* line, bool clrscr) {
 // the output is a pointer array so the line width is not baked into the
 // array type. Each out[i] must point to a buffer of at least `width + 1`
 // chars (the caller owns the storage). Used by the scrollable response
-// view (respLines[]) and the speech-bubble widget (bubble.cpp).
+// widget (bubble.cpp).
 int wrapText(const String& text, char* out[], int width, int maxLines) {
   int count = 0;
   String word;
@@ -68,14 +68,5 @@ int wrapText(const String& text, char* out[], int width, int maxLines) {
   addWord();
   flushLine();
   return count;
-}
-
-// 3-arg convenience form (the original signature, issue #13): wraps at
-// RESPONSE_CHARS_PER_LINE. Kept so the current caller (recorder.cpp, the
-// response table, passing a 2-D char array) is untouched (issue #31).
-int wrapText(const String& text, char lines[][RESPONSE_CHARS_PER_LINE + 1], int maxLines) {
-  char* out[RESPONSE_MAX_LINES];
-  for (int i = 0; i < maxLines; i++) out[i] = lines[i];
-  return wrapText(text, out, RESPONSE_CHARS_PER_LINE, maxLines);
 }
 

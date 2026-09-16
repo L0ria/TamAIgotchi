@@ -5,7 +5,6 @@
 #include <Arduino.h>  // String, Serial, F(), memcpy
 #include <esp_heap_caps.h>  // heap_caps_malloc / heap_caps_get_free_size (PSRAM recording buffer)
 #include <OpenAI.h>  // OpenAI_ChatCompletion / OpenAI_AudioTranscription / OpenAI_StringResponse / log_d
-#include "text_utils.h"  // wrapText() (3-arg form for the response table)
 #include "statusbar.h"   // statusShow() / statusError() (issue #33, step 3)
 #include "bubble.h"      // bubbleSetText() / bubbleRender() (prompt in the bubble, issue #33)
 #include <Adafruit_SSD1306.h>  // for the shared `display` object (display.display() after bubbleRender)
@@ -13,10 +12,6 @@
 // Shared objects + helpers declared in TamAIgotchi.ino (the sketch entry
 // point); referenced here instead of passed through every call.
 extern RecState recState;
-extern char respLines[RESPONSE_MAX_LINES][RESPONSE_CHARS_PER_LINE + 1];
-extern int respLineCount;
-extern int scrollOffset;
-extern void renderResponseWindow();
 extern AlienAnimation alien;  // markActivity() on response ready
 extern OpenAI_ChatCompletion chat;
 extern OpenAI_AudioTranscription audio;
@@ -193,12 +188,16 @@ void Recorder::textGeneration(const String& prompt) {
     return;
   }
 
-  // Store the reply in the static line table and switch to the scrollable
-  // RESPONSE view (issue #13) instead of dumping the raw text on the screen
-  // (which clipped everything below y=64).
-  respLineCount = wrapText(response, respLines, RESPONSE_MAX_LINES);
-  scrollOffset = 0;
-  renderResponseWindow();
+  // Store the reply in the speech bubble and switch to the RESPONSE state
+  // (issue #34, step 4 of 6 of the UI restructure in #29 - the bubble
+  // owns the text table from now on; the old respLines[] response table
+  // and renderResponseWindow() are gone). The response is content, so it
+  // lives in the bubble: clear the frame, draw the bubble, then put the
+  // "Response 1/N" counter on status line 1 (issue #29 Q6).
+  bubbleSetText(response);
+  display.clearDisplay();
+  bubbleRender();
+  statusShow("Response 1/" + String(bubbleLineCount()));
   recState = RESPONSE;
   // Issue #16: re-arm the inactivity timer so the animation returns
   // ALIEN_RESPONSE_TIMEOUT_MS after the response has been shown without a

@@ -6,7 +6,7 @@
 //   hardware.h   - shared objects (display, i2s, wifiConfig, openai/chat/audio)
 //                  + hardwareInit() (pinMode + OLED + I2S bring-up)
 //   display.h    - showWifiStatus() / resetWifiSettingsAndRestart() /
-//                  renderResponseWindow() / startRecording() (dedup)
+//                  startRecording() (dedup)
 //   recorder.h   - PSRAM recording buffer + SENDING/RESPONSE flow
 //   alien.h      - the idle-alien animation (issue #16)
 //   buttons.h    - the debounced buttons (step 2)
@@ -16,11 +16,12 @@
 //                  issue #32: the top two lines are the status bar)
 #include "hardware.h"   // shared hardware objects + hardwareInit()
 #include "display.h"    // showWifiStatus() / resetWifiSettingsAndRestart() /
-                        // renderResponseWindow() / startRecording()
+                        // startRecording()
 #include "buttons.h"    // Button instances
 #include "recorder.h"   // Recorder + RecState
 #include "alien.h"      // AlienAnimation
 #include "statusbar.h"  // statusShow() / statusError() (issue #32, step 2)
+#include "bubble.h"     // bubbleScroll() / bubbleJumpTo() / bubbleRender() (issue #34, step 4)
 
 // State machine (issue #9 + issue #13):
 //   IDLE      - waiting for a debounced button press
@@ -28,9 +29,11 @@
 //               PSRAM buffer; LED on; stops on release / buffer full / cap
 //   SENDING   - patching the WAV header + uploading to LocalAI for
 //               transcription, then the LLM call (blocking)
-//   RESPONSE  - the LLM reply is shown as a scrollable window (issue #13):
-//               GPIO9 short = scroll down, GPIO11 short = scroll up,
-//               GPIO11 hold 5 s = back to IDLE, main button = new recording
+//   RESPONSE  - the LLM reply is shown in the speech bubble (issue #34,
+//               step 4 of the UI restructure in #29): GPIO9 short = scroll
+//               down, GPIO11 short = scroll up, double-press of the same
+//               button = jump to start/end (option A, #29 Q7), GPIO11 hold
+//               5 s = back to IDLE, main button = new recording
 RecState recState = IDLE;  // app state machine (issue #9 + #13); shared with the recorder (recorder.h)
 
 // ---------------------------------------------------------------------------
@@ -40,13 +43,6 @@ RecState recState = IDLE;  // app state machine (issue #9 + #13); shared with th
 // after the LLM response has been shown without a button press.
 //   ANIM_IDLE   - waiting for inactivity (IDLE or RESPONSE state)
 //   ANIM_ACTIVE - running the 70 s loop (bubble / wave / stand phases)
-// Scrollable response view (issue #13): the reply is word-wrapped into this
-// static table and rendered as a RESPONSE_VISIBLE_LINES window below a
-// "Response: x/y" header. ~350 B of static RAM in total.
-char respLines[RESPONSE_MAX_LINES][RESPONSE_CHARS_PER_LINE + 1];
-int  respLineCount = 0;  // number of wrapped lines actually in use
-int  scrollOffset  = 0;  // index of the first visible line (0 .. max(0, count - RESPONSE_VISIBLE_LINES))
-
 // Buttons (step 2 of the refactoring, issue #18): one Button instance per
 // physical button. update() is called once per loop() pass for every
 // button before reading isPressed() / isLongPressed() (see buttons.h).
@@ -226,26 +222,56 @@ void loop() {
   }
 
   if (recState == RESPONSE) {
-    // Scrollable response view (issue #13).
+    // Scrollable response in the speech bubble (issue #34, step 4 of 6 of
+    // the UI restructure in #29): the reply lives in the bubble table;
+    // the "Response x/y" counter is status line 1 (issue #29 Q6).
     // Issue #16: any button press is activity - it stops the animation
     // (if running) and restarts the auto-return timer.
-    // GPIO9 (scroll down): short press = next line; the 5 s long-press
-    // (WiFi reset) is already handled above in every state.
+    //
+    // Double-press jump (issue #29 Q7, option A): the same scroll button
+    // pressed twice within DOUBLE_PRESS_MS jumps to the start (up) / end
+    // (down) so long answers (~50+ wrapped lines) can be reached without
+    // ~45 single presses. A press of the OTHER button resets the pair, so
+    // up-down-up is never a double. The 5 s holds keep their meaning.
+    static unsigned long lastPressMs  = 0;  // millis() of the last scroll press
+    static int           lastPressBtn = -1; // -1 none, 0 = down, 1 = up
+    static const unsigned long DOUBLE_PRESS_MS = 500;
+
+    // Re-render the bubble + refresh the "Response x/y" status counter.
+    // Called after every scroll / jump, and on every press (a press also
+    // recovers the screen if the idle animation was running when it
+    // landed, issue #16).
+    auto renderResponse = []() {
+      display.clearDisplay();
+      bubbleRender();
+      statusShow("Response " + String(bubbleScrollOffset() + 1) + "/"
+                 + String(bubbleLineCount()));
+    };
+
+    // GPIO9 (scroll down): short press = next line; double press = jump to
+    // the end; the 5 s long-press (WiFi reset) is already handled above
+    // in every state.
     if (scrollDownBtn.isPressed()) {
       alien.markActivity();
-      if (scrollOffset < respLineCount - RESPONSE_VISIBLE_LINES) {
-        scrollOffset++;
-        D_TD(F("scroll down ")); D_TDLN(scrollOffset + 1);
+      unsigned long now = millis();
+      bool isDouble = (lastPressBtn == 0) && ((now - lastPressMs) < DOUBLE_PRESS_MS);
+      if (isDouble) {
+        bubbleJumpTo(true);
+        D_TDLN(F("double-press down: jump to end"));
+      } else {
+        bubbleScroll(true);
+        D_TD(F("scroll down ")); D_TDLN(bubbleScrollOffset() + 1);
       }
-      // Always refresh: also recovers the screen if the idle animation was
-      // running when this press landed (issue #16).
-      renderResponseWindow();
+      lastPressMs = now;
+      lastPressBtn = 0;
+      renderResponse();
     }
-    // GPIO11 (scroll up): short press = previous line; 5 s hold = exit
-    // the response view back to IDLE.
+    // GPIO11 (scroll up): short press = previous line; double press = jump
+    // to the start; 5 s hold = exit the response view back to IDLE.
     if (scrollUpBtn.isLongPressed()) {
       Serial.println(F("Scroll-up button held 5 s - exiting response view"));
       D_TDLN(F("scroll-up button long-press: back to IDLE"));
+      bubbleClear(); // Q4: the response is removed when we leave the view
       recState = IDLE;
       showWifiStatus(); // also marks activity (issue #16)
       mainBtn.reset(); // re-arm the main button for the next press
@@ -253,18 +279,23 @@ void loop() {
     }
     if (scrollUpBtn.isPressed()) {
       alien.markActivity();
-      if (scrollOffset > 0) {
-        scrollOffset--;
-        D_TD(F("scroll up ")); D_TDLN(scrollOffset + 1);
+      unsigned long now = millis();
+      bool isDouble = (lastPressBtn == 1) && ((now - lastPressMs) < DOUBLE_PRESS_MS);
+      if (isDouble) {
+        bubbleJumpTo(false);
+        D_TDLN(F("double-press up: jump to start"));
+      } else {
+        bubbleScroll(false);
+        D_TD(F("scroll up ")); D_TDLN(bubbleScrollOffset() + 1);
       }
-      // Always refresh: also recovers the screen if the idle animation was
-      // running when this press landed (issue #16).
-      renderResponseWindow();
+      lastPressMs = now;
+      lastPressBtn = 1;
+      renderResponse();
     }
     // Main button: starts a new recording (same as in IDLE).
     if (mainBtn.isPressed()) {
       alien.markActivity();
-      startRecording(); // deduped block (display.h); shows the error / AP status
+      startRecording(); // deduped block (display.h); clears the bubble (issue #34)
     }
     return;
   }
