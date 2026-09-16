@@ -47,7 +47,9 @@ void renderResponseWindow();
 // Start a new recording take (dedupes the ~15-line block that used to be
 // copied verbatim in the IDLE and RESPONSE branches of loop()): reset the
 // take position, switch to RECORDING, turn the LED on and show the
-// "Recording / max 10 s" screen.
+// "Recording (max 10 s)" status line (issue #33, step 3 of the UI
+// restructure in #29 - the elapsed-seconds counter is refreshed from the
+// RECORDING branch of loop()).
 // Returns false (and shows the error) if the recording buffer was not
 // allocated at boot, or if the WiFi is not connected (the AP / connection
 // status screen is shown instead) - the caller must not start a take.
