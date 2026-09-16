@@ -9,7 +9,6 @@
 //
 // Both use the shared `display` object declared in TamAIgotchi.ino.
 #pragma once
-#include "config.h"  // RESPONSE_CHARS_PER_LINE
 
 class String;  // forward declaration (complete type via <Arduino.h> in the .cpp)
 
@@ -27,12 +26,6 @@ void combinedOutput(int x, int y, char* line, bool clrscr);
 //              table, the bubble's line table, ...)
 //   width    - max chars per line (excluding the NUL)
 //   maxLines - capacity of out[]
-// Used by the scrollable response view (respLines[]) and the speech-bubble
-// widget (bubble.cpp).
+// Used by the speech-bubble widget (bubble.cpp).
 int wrapText(const String& text, char* out[], int width, int maxLines);
-
-// 3-arg convenience form (the original signature, issue #13): wraps at
-// RESPONSE_CHARS_PER_LINE. The current caller (recorder.cpp, the response
-// table) passes a 2-D char array and keeps using this one untouched.
-int wrapText(const String& text, char lines[][RESPONSE_CHARS_PER_LINE + 1], int maxLines);
 

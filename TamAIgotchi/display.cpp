@@ -7,6 +7,7 @@
 #include "alien.h"      // AlienAnimation (markActivity re-arms the idle timer)
 #include "recorder.h"   // Recorder (startRecording() touches rec_buf / rec_pos / rec_start)
 #include "statusbar.h"  // statusShow() / statusError() (issue #32, step 2)
+#include "bubble.h"      // bubbleClear() / bubbleRender() (issue #34, step 4)
 
 // Shared objects + state (defined in hardware.h / owned by the sketch);
 // referenced here instead of passed through every call - the same pattern
@@ -16,9 +17,6 @@ extern ESPWifiConfig wifiConfig;
 extern Recorder recorder;
 extern RecState recState;
 extern AlienAnimation alien;
-extern char respLines[RESPONSE_MAX_LINES][RESPONSE_CHARS_PER_LINE + 1];
-extern int respLineCount;
-extern int scrollOffset;
 
 // Show the current WiFi situation on the display (and Serial).
 //  - AP mode:    show the access point name + IP so it can be configured
@@ -69,34 +67,6 @@ void resetWifiSettingsAndRestart() {
   ESP.restart();
 }
 
-// Render the current response window (issue #13). The default font is
-// 6x8 px, so the 128x64 screen holds 21 chars x 8 lines. Line 0 is the
-// "Response: x/y" header (x = first visible line, y = total lines); line 1
-// is a blank separator; the next RESPONSE_VISIBLE_LINES lines are the
-// window starting at scrollOffset. Lines are printed consecutively
-// (println auto-advances 8 px), matching showWifiStatus().
-void renderResponseWindow() {
-  int total = respLineCount;
-  int maxOffset = (total > RESPONSE_VISIBLE_LINES) ? total - RESPONSE_VISIBLE_LINES : 0;
-  if (scrollOffset < 0) scrollOffset = 0;
-  if (scrollOffset > maxOffset) scrollOffset = maxOffset;
-
-  display.clearDisplay();
-  display.setCursor(0, 0);
-  display.print(F("Response: "));
-  display.print(scrollOffset + 1);
-  display.print('/');
-  display.println(total); // newline -> next line (y=8)
-  display.println();      // blank separator line (y=16)
-
-  for (int i = 0; i < RESPONSE_VISIBLE_LINES; i++) {
-    int idx = scrollOffset + i;
-    if (idx >= total) break;
-    display.println(respLines[idx]); // auto-advances 8 px per line
-  }
-  display.display();
-}
-
 // Start a new recording take (dedupes the ~15-line block that used to be
 // copied verbatim in the IDLE and RESPONSE branches of loop()).
 bool startRecording() {
@@ -109,6 +79,13 @@ bool startRecording() {
   }
   if (wifiConfig.ESP_mode != AP_MODE && wifiConfig.wifi_connected) {
     // Connected to a known network: start recording into the buffer.
+    // The bubble may still hold the previous response (startRecording() is
+    // reached from the RESPONSE state via the main button, issue #34):
+    // empty it and re-draw the (empty) bubble so no stale text lingers
+    // under the recording status.
+    bubbleClear();
+    display.clearDisplay();
+    bubbleRender();
     showWifiStatus();
     recorder.rec_pos = 0;
     recorder.rec_start = millis();
