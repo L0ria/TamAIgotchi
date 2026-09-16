@@ -11,13 +11,15 @@
 //   alien.h      - the idle-alien animation (issue #16)
 //   buttons.h    - the debounced buttons (step 2)
 //   text_utils.h - combinedOutput() / wrapText() / displayError() (step 1)
+//   statusbar.h  - statusShow() / statusError() / statusClear() (step 2,
+//                  issue #32: the top two lines are the status bar)
 #include "hardware.h"   // shared hardware objects + hardwareInit()
 #include "display.h"    // showWifiStatus() / resetWifiSettingsAndRestart() /
                         // renderResponseWindow() / startRecording()
 #include "buttons.h"    // Button instances
 #include "recorder.h"   // Recorder + RecState
 #include "alien.h"      // AlienAnimation
-#include "text_utils.h" // displayError()
+#include "statusbar.h"  // statusShow() / statusError() (issue #32, step 2)
 
 // State machine (issue #9 + issue #13):
 //   IDLE      - waiting for a debounced button press
@@ -81,7 +83,7 @@ void setup() {
   D_TDLN(F("LocalAI settings registered (LOCALAI_URL, LOCALAI_KEY)"));
 
 /* connect to WiFi (or start the setup access point) */
-  combinedOutput(0, 0, "Connecting to WiFi", true);
+  statusShow("Connecting to WiFi...");
   if (wifiConfig.initialize() == AP_MODE) {
     // No known network was reachable: the device is broadcasting an access
     // point. Keep the setup web server running so the WiFi can be configured.

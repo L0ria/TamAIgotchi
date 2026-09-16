@@ -6,7 +6,7 @@
 #include <ESPWifiConfig.h>     // for the shared `wifiConfig` object
 #include "alien.h"      // AlienAnimation (markActivity re-arms the idle timer)
 #include "recorder.h"   // Recorder (startRecording() touches rec_buf / rec_pos / rec_start)
-#include "text_utils.h" // displayError()
+#include "statusbar.h"  // statusShow() / statusError() (issue #32, step 2)
 
 // Shared objects + state (defined in hardware.h / owned by the sketch);
 // referenced here instead of passed through every call - the same pattern
@@ -25,17 +25,13 @@ extern int scrollOffset;
 //  - connected:  show the IP address assigned by the router
 //  - otherwise:  show that it is still trying to connect
 void showWifiStatus() {
-  display.clearDisplay();
-  display.setCursor(0, 0);
-
+  // Status bar (issue #32, step 2 of the UI restructure in #29): the top
+  // two lines carry the WiFi state; the full details still go to Serial.
   if (wifiConfig.ESP_mode == AP_MODE) {
-    display.println(F("No WiFi connected"));
-    display.println(F("Join AP:"));
-    display.println(wifiConfig.get_AP_name());
-    display.print(F("IP: "));
-    display.println(wifiConfig.ESP_IP.toString());
-    display.print(F("Port: "));
-    display.println(WIFI_SETUP_PORT);
+    // AP mode (issue #29 Q2): line 1 = AP name, line 2 = setup address.
+    // No "No WiFi - join AP" line. The full setup URL goes to Serial.
+    statusShow(wifiConfig.get_AP_name(),
+               String("192.168.4.1:") + WIFI_SETUP_PORT);
     Serial.print(F("AP name: "));
     Serial.println(wifiConfig.get_AP_name());
     Serial.print(F("Setup URL: http://"));
@@ -43,20 +39,17 @@ void showWifiStatus() {
     Serial.print(F(":"));
     Serial.println(WIFI_SETUP_PORT);
   } else if (wifiConfig.wifi_connected) {
-    display.println(F("WiFi connected"));
-    display.print(F("SSID: "));
-    display.println(WiFi.SSID());
-    display.print(F("IP: "));
-    display.println(wifiConfig.ESP_IP.toString());
+    // STA (issue #29 Q3): line 1 = "WiFi: <SSID>" (SSID truncated to 16
+    // chars, no ellipsis - 21 - 5), line 2 = "IP: x.x.x.x".
+    statusShow(String("WiFi: ") + WiFi.SSID().substring(0, 16),
+               String("IP: ") + wifiConfig.ESP_IP.toString());
     Serial.print(F("Connected to "));
     Serial.print(WiFi.SSID());
     Serial.print(F(" IP: "));
     Serial.println(wifiConfig.ESP_IP.toString());
   } else {
-    display.println(F("Connecting to WiFi..."));
-    Serial.println(F("Connecting to WiFi..."));
+    statusShow("Connecting to WiFi...");
   }
-  display.display();
   alien.markActivity(); // issue #16: showWifiStatus() is always the result of
                        // a button press (or boot) - re-arm the idle timer
 }
@@ -71,11 +64,7 @@ void showWifiStatus() {
 void resetWifiSettingsAndRestart() {
   wifiConfig.resetAllSettings(); // public library helper (v2.3.0), all settings
   Serial.println(F("WiFi settings reset. Rebooting into setup AP mode..."));
-  display.clearDisplay();
-  display.setCursor(0, 0);
-  display.println(F("WiFi settings reset."));
-  display.println(F("Rebooting to setup..."));
-  display.display();
+  statusShow("WiFi settings reset.", "Rebooting to setup...");
   delay(300);
   ESP.restart();
 }
@@ -115,8 +104,7 @@ bool startRecording() {
   if (recorder.rec_buf == NULL) {
     // Recording buffer allocation failed at boot: keep the error
     // visible, do not start a take.
-    displayError(F("Record buffer alloc failed"),
-                F("Recording is disabled. Reboot the device."));
+    statusError("Rec buf alloc failed", "Reboot the device.");
     return false;
   }
   if (wifiConfig.ESP_mode != AP_MODE && wifiConfig.wifi_connected) {

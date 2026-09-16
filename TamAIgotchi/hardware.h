@@ -20,7 +20,7 @@
 #include "ESP_I2S.h"
 #include <OpenAI.h>
 #include "config.h"      // SCREEN_*, WIFI_AP_NAME, WIFI_SETUP_PORT, I2S_*, button pins, D_T*()
-#include "text_utils.h"  // combinedOutput() (hardwareInit() progress output)
+#include "statusbar.h"  // statusShow() / statusError() (hardwareInit() progress + I2S error)
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 I2SClass i2s;
@@ -66,13 +66,13 @@ inline bool hardwareInit() {
   display.clearDisplay();
 
   /* setup i2s */
-  combinedOutput(0, 0, "Initializing I2S bus...", true);
+  statusShow("Initializing I2S...");
   i2s.setPins(I2S_SCK, I2S_WS, -1, I2S_DIN);
   if (!i2s.begin(I2S_MODE_STD, 16000, I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_MONO, I2S_STD_SLOT_LEFT)) {
-    combinedOutput(0, 16, "Failed to initialize I2S bus!", false);
+    statusError("I2S init failed", "Reboot the device.");
     return false;
   }
-  combinedOutput(0, 16, "I2S bus initialized.", false);
+  statusShow("I2S bus initialized.");
   D_TDLN(F("I2S bus initialized (16 kHz, 32-bit, mono, slot left)"));
   return true;
 }
