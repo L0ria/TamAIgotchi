@@ -114,11 +114,11 @@ bool startRecording() {
     recorder.rec_start = millis();
     recState = RECORDING;
     digitalWrite(LED_PIN, HIGH);
-    display.clearDisplay();
-    display.setCursor(0, 0);
-    display.println(F("Recording"));
-    display.println(F("max 10 s"));
-    display.display();
+    // Status bar (issue #33, step 3 of the UI restructure in #29): line 1
+    // = "Recording (max 10 s)" (20 chars, fits the 21-char limit); line 2
+    // counts up the elapsed seconds from the RECORDING branch of loop()
+    // (throttled to once per whole second).
+    statusShow("Recording (max 10 s)");
     D_TDLN(F("recording start (hold button, max 10 s)"));
     return true;
   }

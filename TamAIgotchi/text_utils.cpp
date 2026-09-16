@@ -26,8 +26,7 @@ void combinedOutput(int x, int y, char* line, bool clrscr) {
 // the output is a pointer array so the line width is not baked into the
 // array type. Each out[i] must point to a buffer of at least `width + 1`
 // chars (the caller owns the storage). Used by the scrollable response
-// view (respLines[]), the speech-bubble widget (bubble.cpp) and
-// displayError().
+// view (respLines[]) and the speech-bubble widget (bubble.cpp).
 int wrapText(const String& text, char* out[], int width, int maxLines) {
   int count = 0;
   String word;
@@ -72,36 +71,11 @@ int wrapText(const String& text, char* out[], int width, int maxLines) {
 }
 
 // 3-arg convenience form (the original signature, issue #13): wraps at
-// RESPONSE_CHARS_PER_LINE. Kept so the current callers (displayError() and
-// recorder.cpp, both passing a 2-D char array) are untouched (issue #31).
+// RESPONSE_CHARS_PER_LINE. Kept so the current caller (recorder.cpp, the
+// response table, passing a 2-D char array) is untouched (issue #31).
 int wrapText(const String& text, char lines[][RESPONSE_CHARS_PER_LINE + 1], int maxLines) {
   char* out[RESPONSE_MAX_LINES];
   for (int i = 0; i < maxLines; i++) out[i] = lines[i];
   return wrapText(text, out, RESPONSE_CHARS_PER_LINE, maxLines);
 }
 
-// Show an error on the OLED (title line 1, wrapped detail lines 2-4) and
-// mirror the full message to Serial. The detail text is wrapped at word
-// boundaries to fit the 128 px display (21 chars/line at font size 1).
-// The screen stays until the next button press (the button flow re-shows
-// the WiFi status first).
-void displayError(const String& title, const String& detail) {
-  Serial.print(F("ERROR: "));
-  Serial.println(title);
-  if (detail.length()) {
-    Serial.print(F("       "));
-    Serial.println(detail);
-  }
-
-  display.clearDisplay();
-  display.setCursor(0, 0);
-  display.println(title);
-
-  char errLines[3][RESPONSE_CHARS_PER_LINE + 1];
-  int n = wrapText(detail, errLines, 3);
-  for (int i = 0; i < n; i++) {
-    display.setCursor(0, 16 + 16 * i);
-    display.println(errLines[i]);
-  }
-  display.display();
-}

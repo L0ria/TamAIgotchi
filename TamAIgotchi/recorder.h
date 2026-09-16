@@ -10,8 +10,10 @@
 // The `chat` / `audio` OpenAI clients, the scrollable-response table
 // (respLines[] / respLineCount / scrollOffset), renderResponseWindow() and
 // alien.markActivity() are declared in TamAIgotchi.ino and referenced via
-// extern (see recorder.cpp). The shared `display` object is used by the
-// text_utils helpers these functions call.
+// extern (see recorder.cpp). Status + bubble rendering goes through
+// statusbar.{h,cpp} (statusShow/statusError, issue #33, step 3) and
+// bubble.{h,cpp} (bubbleSetText/bubbleRender - the prompt text, issue #33),
+// which use the shared `display` object.
 #pragma once
 #include <cstddef>  // size_t
 #include <cstdint>  // uint8_t

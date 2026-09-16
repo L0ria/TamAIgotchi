@@ -3,9 +3,11 @@
 //
 //   combinedOutput() - print a line to Serial AND the display
 //   wrapText()       - word-wrap a String into fixed-width char lines
-//   displayError()   - show a titled error box on the display + Serial
 //
-// All three use the shared `display` object declared in TamAIgotchi.ino.
+// (displayError() was removed in step 3 of the UI restructure in #29,
+// issue #33 - the 2-line status-bar form statusError() replaced it.)
+//
+// Both use the shared `display` object declared in TamAIgotchi.ino.
 #pragma once
 #include "config.h"  // RESPONSE_CHARS_PER_LINE
 
@@ -25,18 +27,12 @@ void combinedOutput(int x, int y, char* line, bool clrscr);
 //              table, the bubble's line table, ...)
 //   width    - max chars per line (excluding the NUL)
 //   maxLines - capacity of out[]
-// Used by the scrollable response view (respLines[]), the speech-bubble
-// widget (bubble.cpp) and displayError().
+// Used by the scrollable response view (respLines[]) and the speech-bubble
+// widget (bubble.cpp).
 int wrapText(const String& text, char* out[], int width, int maxLines);
 
 // 3-arg convenience form (the original signature, issue #13): wraps at
-// RESPONSE_CHARS_PER_LINE. Both current callers (displayError() and
-// recorder.cpp) pass a 2-D char array and keep using this one untouched.
+// RESPONSE_CHARS_PER_LINE. The current caller (recorder.cpp, the response
+// table) passes a 2-D char array and keeps using this one untouched.
 int wrapText(const String& text, char lines[][RESPONSE_CHARS_PER_LINE + 1], int maxLines);
 
-// Show an error on the OLED (title line 1, wrapped detail lines 2-4) and
-// mirror the full message to Serial. The detail text is wrapped at word
-// boundaries to fit the 128 px display (21 chars/line at font size 1).
-// The screen stays until the next button press (the button flow re-shows
-// the WiFi status first).
-void displayError(const String& title, const String& detail);

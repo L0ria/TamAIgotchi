@@ -10,7 +10,8 @@
 //   recorder.h   - PSRAM recording buffer + SENDING/RESPONSE flow
 //   alien.h      - the idle-alien animation (issue #16)
 //   buttons.h    - the debounced buttons (step 2)
-//   text_utils.h - combinedOutput() / wrapText() / displayError() (step 1)
+//   text_utils.h - combinedOutput() / wrapText() (step 1; displayError()
+//                  removed in step 3, issue #33)
 //   statusbar.h  - statusShow() / statusError() / statusClear() (step 2,
 //                  issue #32: the top two lines are the status bar)
 #include "hardware.h"   // shared hardware objects + hardwareInit()
@@ -184,6 +185,18 @@ void loop() {
     // Stream I2S audio into the preallocated buffer (blocking, ~97 ms).
     size_t n = i2s.readBytes((char *)(recorder.rec_buf + 44 + recorder.rec_pos), REC_CHUNK_BYTES);
     recorder.rec_pos += n;
+
+    // Live recording counter (issue #33, step 3 of the UI restructure in
+    // #29, Q10): status line 1 = "Recording (max 10 s)", line 2 = elapsed
+    // seconds. The I2S read loop is chunked (~97 ms), so the counter
+    // refreshes naturally each loop pass - throttled to once per whole
+    // second to avoid re-drawing ~10x/s.
+    unsigned long recSeconds = (millis() - recorder.rec_start) / 1000UL;
+    static unsigned long recSecondsShown = 0;
+    if (recSeconds != recSecondsShown) {
+      recSecondsShown = recSeconds;
+      statusShow("Recording (max 10 s)", String(recSeconds) + " s");
+    }
 
     // Stop conditions (checked after every chunk):
     bool stop = false;

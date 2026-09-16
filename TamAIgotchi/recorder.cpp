@@ -5,7 +5,10 @@
 #include <Arduino.h>  // String, Serial, F(), memcpy
 #include <esp_heap_caps.h>  // heap_caps_malloc / heap_caps_get_free_size (PSRAM recording buffer)
 #include <OpenAI.h>  // OpenAI_ChatCompletion / OpenAI_AudioTranscription / OpenAI_StringResponse / log_d
-#include "text_utils.h"  // combinedOutput(), wrapText(), displayError()
+#include "text_utils.h"  // wrapText() (3-arg form for the response table)
+#include "statusbar.h"   // statusShow() / statusError() (issue #33, step 3)
+#include "bubble.h"      // bubbleSetText() / bubbleRender() (prompt in the bubble, issue #33)
+#include <Adafruit_SSD1306.h>  // for the shared `display` object (display.display() after bubbleRender)
 
 // Shared objects + helpers declared in TamAIgotchi.ino (the sketch entry
 // point); referenced here instead of passed through every call.
@@ -17,6 +20,7 @@ extern void renderResponseWindow();
 extern AlienAnimation alien;  // markActivity() on response ready
 extern OpenAI_ChatCompletion chat;
 extern OpenAI_AudioTranscription audio;
+extern Adafruit_SSD1306 display;  // display.display() after bubbleRender() (issue #33)
 
 bool Recorder::bufferAllocated() const {
   return rec_buf != NULL;
@@ -51,8 +55,10 @@ bool Recorder::initRecBuffer() {
   D_TDLN(have_psram ? "yes" : "no");
 
   if (cap == 0) {
-    displayError(F("Record buffer alloc failed"),
-                F("Not enough free memory for the recording buffer."));
+    // Status bar (issue #33, step 3 of the UI restructure in #29): the
+    // full detail goes to Serial (the status bar fits 21 chars/line).
+    Serial.println(F("Record buffer alloc failed: Not enough free memory for the recording buffer."));
+    statusError(F("Rec buf alloc failed"), F("Not enough memory"));
     return false;
   }
 
@@ -62,8 +68,9 @@ bool Recorder::initRecBuffer() {
     rec_buf = (uint8_t *)malloc(cap + 44);
   }
   if (rec_buf == NULL) {
-    displayError(F("Record buffer alloc failed"),
-                F("heap_caps_malloc failed for the recording buffer."));
+    // Status bar (issue #33): full detail to Serial (21 chars/line limit).
+    Serial.println(F("Record buffer alloc failed: heap_caps_malloc failed for the recording buffer."));
+    statusError(F("Rec buf alloc failed"), F("rec buf malloc failed"));
     return false;
   }
 
@@ -120,7 +127,10 @@ bool Recorder::sendRecording() {
   D_TDDEC((unsigned)(rec_pos / 65536));
   D_TDLN(F(" s of audio)"));
 
-  combinedOutput(0, 0, "Sending audio", true);
+  // Status bar (issue #33, step 3 of the UI restructure in #29): the
+  // "Sending audio" screen (full clear + 1 line) becomes a status line;
+  // the byte count already went to Serial above.
+  statusShow("Sending audio...");
   String transcription = audio.file(rec_buf, 44 + rec_pos, OPENAI_AUDIO_INPUT_FORMAT_WAV);
   log_d(transcription);
   D_TD(F("transcription length: "));
@@ -131,8 +141,10 @@ bool Recorder::sendRecording() {
   // visible instead of sending an empty prompt to the LLM.
   transcription.trim();
   if (transcription.length() == 0) {
-    displayError(F("Transcription failed"),
-                F("LocalAI unreachable or returned an error. Check LOCALAI_URL in the setup page (Custom tab)."));
+    // Status bar (issue #33): 2-line form; the full detail goes to Serial
+    // (the status bar fits 21 chars/line).
+    Serial.println(F("Transcription failed: LocalAI unreachable or returned an error. Check LOCALAI_URL in the setup page (Custom tab)."));
+    statusError(F("Transcription failed"), F("Check LOCALAI_URL"));
     return false;
   }
 
@@ -141,12 +153,17 @@ bool Recorder::sendRecording() {
 }
 
 void Recorder::textGeneration(const String& prompt) {
-  char cprompt[prompt.length() + 1];
-  memcpy(cprompt, prompt.c_str(), prompt.length() + 1);
   D_TD(F("prompt length: "));
   D_TDLN(prompt.length());
-  combinedOutput(0, 0, "Sending prompt", true);
-  combinedOutput(0, 16, cprompt, false);
+  // Status bar (issue #33, step 3 of the UI restructure in #29): the
+  // "Sending prompt" line becomes a status line, and the prompt text
+  // (content, #29 section 4 row 10) goes into the speech bubble (step 1
+  // module). bubbleRender() draws into the frame; display.display()
+  // pushes it to the panel (the single render pass arrives in step 5).
+  statusShow("Sending prompt...");
+  bubbleSetText(prompt);
+  bubbleRender();
+  display.display();
 
   OpenAI_StringResponse result = chat.message(prompt);
   Serial.printf("Received message. Tokens: %u\n", result.tokens());
@@ -157,7 +174,9 @@ void Recorder::textGeneration(const String& prompt) {
   // response plus the server's error text (e.g. "The model 'gpt-4' does
   // not exist"), which we must not swallow into a blank display.
   if (result.error()) {
-    displayError(F("LLM error"), String(result.error()));
+    // Status bar (issue #33): statusError() truncates the detail to 21
+    // chars on screen; the full server text always goes to Serial.
+    statusError(F("LLM error"), String(result.error()));
     return;
   }
 
@@ -168,8 +187,9 @@ void Recorder::textGeneration(const String& prompt) {
 
   if (response.length() == 0) {
     // HTTP 200 but no content (e.g. an unexpected response shape).
-    displayError(F("Empty response"),
-                F("LocalAI returned no text. Check the model and its settings."));
+    // Status bar (issue #33): 2-line form; full detail to Serial.
+    Serial.println(F("Empty response: LocalAI returned no text. Check the model and its settings."));
+    statusError(F("Empty response"), F("Check model settings"));
     return;
   }
 
