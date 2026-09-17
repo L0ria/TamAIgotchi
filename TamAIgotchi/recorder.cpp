@@ -6,7 +6,7 @@
 #include <esp_heap_caps.h>  // heap_caps_malloc / heap_caps_get_free_size (PSRAM recording buffer)
 #include <OpenAI.h>  // OpenAI_ChatCompletion / OpenAI_AudioTranscription / OpenAI_StringResponse / log_d
 #include "statusbar.h"   // statusShow() / statusError() (issue #33, step 3)
-#include "bubble.h"      // bubbleSetText() (prompt in the bubble, issue #33)
+#include "bubble.h"      // bubble.setText() (prompt in the bubble, issue #33)
 #include "messages.h"    // MSG_* user-facing display strings (issue #36, step 6)
 #include "display.h"     // renderScreen() (issue #35, step 5: the single pass)
 
@@ -155,7 +155,7 @@ void Recorder::textGeneration(const String& prompt) {
   // (content, #29 section 4 row 10) goes into the speech bubble (step 1
   // module). renderScreen() pushes the full frame (issue #35, step 5).
   statusShow(MSG_SENDING_PROMPT);
-  bubbleSetText(prompt);
+  bubble.setText(prompt);
   renderScreen();
 
   OpenAI_StringResponse result = chat.message(prompt);
@@ -193,9 +193,9 @@ void Recorder::textGeneration(const String& prompt) {
   // lives in the bubble; then the "Response 1/N" counter goes on status
   // line 1 (issue #29 Q6). One full frame through renderScreen()
   // (issue #35, step 5).
-  bubbleSetText(response);
+  bubble.setText(response);
   renderScreen();
-  statusShow(MSG_RESPONSE_PREFIX "1/" + String(bubbleLineCount()));
+  statusShow(MSG_RESPONSE_PREFIX "1/" + String(bubble.lineCount()));
   recState = RESPONSE;
   // Issue #16: re-arm the inactivity timer so the animation returns
   // ALIEN_RESPONSE_TIMEOUT_MS after the response has been shown without a

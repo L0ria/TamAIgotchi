@@ -8,7 +8,7 @@
 #include "recorder.h"   // Recorder (startRecording() touches rec_buf / rec_pos / rec_start)
 #include "statusbar.h"  // statusShow() / statusError() (issue #32, step 2)
 #include "messages.h"   // MSG_* user-facing display strings (issue #36, step 6)
-#include "bubble.h"      // bubbleClear() / bubbleRender() (issue #34, step 4)
+#include "bubble.h"      // bubble.clear() / bubble.render() (issue #34, step 4)
 #include "display.h"     // renderScreen() (issue #35, step 5)
 
 // Shared objects + state (defined in hardware.h / owned by the sketch);
@@ -32,13 +32,13 @@ void renderScreen() {
   statusShow();          // redraw the status bar's two lines (no panel push)
   alien.drawSprite();    // stand frame / current animation frame (always)
   // Bubble: while the idle animation runs, the animation owns the bubble
-  // content (bubbleRenderText() - the line table is untouched, so the
+  // content (bubble.renderText() - the line table is untouched, so the
   // response survives the animation, issue #35 step 5 follow-up, Q4);
   // otherwise the stored table window is drawn as usual.
   if (alien.state() == ANIM_ACTIVE) {
     alien.renderBubble();
   } else {
-    bubbleRender();
+    bubble.render();
   }
   display.display();
 }
@@ -108,7 +108,7 @@ bool startRecording() {
     // reached from the RESPONSE state via the main button, issue #34):
     // empty it and re-draw the (empty) bubble so no stale text lingers
     // under the recording status.
-    bubbleClear();
+    bubble.clear();
     showWifiStatus(); // status lines + renderScreen() (issue #35, step 5)
     recorder.rec_pos = 0;
     recorder.rec_start = millis();
