@@ -4,9 +4,10 @@
 #include "config.h"   // ALIEN_* timings + ALIEN_BUBBLE_TEXT
 #include "recorder.h" // Recorder (rec_buf + recState)
 #include <Arduino.h>  // millis(), Serial, F()
-#include <string.h>   // strlen (speech-bubble width from ALIEN_BUBBLE_TEXT)
 #include <Adafruit_SSD1306.h>  // for the shared `display` object
 #include <ESPWifiConfig.h>     // for the shared `wifiConfig` object (canAnimate)
+#include "bubble.h"     // bubbleRenderText() (issue #35, step 5 follow-up)
+#include "display.h"    // renderScreen() (issue #35, step 5: the single pass)
 
 // Shared objects + state declared in TamAIgotchi.ino (the sketch entry
 // point); referenced here instead of passed through every call.
@@ -39,32 +40,41 @@ void AlienAnimation::renderAlien(int frame, int x, int y) {
   display.drawBitmap(x, y, alienFrameData[frame], ALIEN_SPRITE_W, ALIEN_SPRITE_H, WHITE);
 }
 
-// Render the current animation scene. The alien (24x22 px) is anchored at
-// (4, 42): it spans x 4..27 (< 64) and y 42..63 (>= 32), so it stays in the
-// lower-left quadrant. The speech bubble sits above the alien's head at
-// (2, 24) with its width derived from the configured text (clamped so it
-// never crosses the vertical middle at x = 64); y 24..39 (above the middle).
-void AlienAnimation::renderAlienScene() {
-  display.clearDisplay();
+// Draw the alien sprite at its anchor (4, 42) into the current frame
+// (issue #35, step 5 of 6 of the UI restructure in #29): the alien (24x22
+// px) spans x 4..27 and y 42..63, so it stays in the lower-left quadrant,
+// to the left of the bubble (x 30..126, y 18..62). The alien is present in
+// EVERY app state: the stand frame when the animation is not running, the
+// current animation frame while it is (drawSprite() is called by
+// renderScreen() on every frame).
+void AlienAnimation::drawSprite() {
+  int frame = (alienState == ANIM_ACTIVE) ? alienFrame : ALIEN_FRAME_STAND;
+  renderAlien(frame, 4, 42);
+}
+
+// Draw the animation's bubble content into the current frame WITHOUT
+// touching the bubble's line table (issue #35 step 5 follow-up, Q4: the
+// stored response text must survive the animation): the bubble phases
+// (0 / 2) show ALIEN_BUBBLE_TEXT (issue #29 Q8: the bubble is always the
+// same size - no small bubble, no popping rectangle), the wave phases
+// (1 / 3) and the stand phase (4) show an empty bubble. Called by
+// renderScreen() (display.cpp) while the animation is running.
+void AlienAnimation::renderBubble() {
   if (alienPhase == 0 || alienPhase == 2) {
-    // Speech-bubble phase: standing still + bubble with the configured text.
-    // Font 1 advances 6 px per char (5 px glyph + 1 px gap); add 2 px
-    // padding on each side, clamp to 60 px wide so the bubble stays left
-    // of the vertical middle even with a longer ALIEN_BUBBLE_TEXT.
-    int bubbleW = strlen(ALIEN_BUBBLE_TEXT) * 6 + 4;
-    if (bubbleW > 60) bubbleW = 60;
-    display.drawRect(2, 24, bubbleW, 16, WHITE);
-    display.setCursor(4, 28);
-    display.print(ALIEN_BUBBLE_TEXT);
-    renderAlien(ALIEN_FRAME_STAND, 4, 42);
-  } else if (alienPhase == 1 || alienPhase == 3) {
-    // Jump & wave phase: alternating jump / wave frames (swap in alienUpdate()).
-    renderAlien(alienFrame, 4, 42);
+    bubbleRenderText(ALIEN_BUBBLE_TEXT);
   } else {
-    // Standing-still phase: just the alien, no animation.
-    renderAlien(ALIEN_FRAME_STAND, 4, 42);
+    bubbleRenderText(NULL);
   }
-  display.display();
+}
+
+// Render the current animation scene (issue #35, step 5 of 6 of the UI
+// restructure in #29): the animation no longer draws its own frame and no
+// longer touches the bubble's line table - it only pushes one full frame
+// through the single render pass renderScreen() (the sprite frame is drawn
+// by drawSprite(), the bubble content by renderBubble(), both from
+// renderScreen()).
+void AlienAnimation::renderAlienScene() {
+  renderScreen();
 }
 
 void AlienAnimation::start() {

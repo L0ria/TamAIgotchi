@@ -57,9 +57,9 @@ static const uint8_t* const alienFrameData[4] = {
 // from TamAIgotchi.ino as step 4 of the refactoring proposed in issue #18).
 //
 // The AlienAnimation class owns the 6 animation state variables and the
-// markAlienActivity() / alienCanAnimate() / renderAlien() / renderAlienScene()
-// / alienUpdate() helpers. The sketch (TamAIgotchi.ino) owns the instance and
-// calls:
+// markActivity() / canAnimate() / start() / update() / drawSprite() /
+// renderAlienScene() helpers. The sketch (TamAIgotchi.ino) owns the instance
+// and calls:
 //   alien.markActivity()  - on every button press (stops the animation +
 //                           restarts the inactivity timers)
 //   alien.update()        - once per loop() pass (starts on idle timeout +
@@ -93,10 +93,29 @@ class AlienAnimation {
   // The current animation state (ANIM_IDLE / ANIM_ACTIVE).
   AlienState state() const { return alienState; }
 
+  // Draw the alien sprite at its anchor (x 4..27, y 42..63) into the current
+  // frame: the stand frame when the animation is not running, the current
+  // animation frame while it is (issue #35, step 5 of 6 of the UI restructure
+  // in #29: the alien is present in EVERY app state). Called by
+  // renderScreen() (display.cpp) on every frame - no clearDisplay() /
+  // display() of its own.
+  void drawSprite();
+
+  // Draw the animation's bubble content into the current frame WITHOUT
+  // touching the bubble's line table (issue #35 step 5 follow-up, Q4: the
+  // stored response text must survive the animation): ALIEN_BUBBLE_TEXT in
+  // the bubble phases (0 / 2), an empty bubble in the wave / stand phases
+  // (1 / 3 / 4). Called by renderScreen() (display.cpp) while the
+  // animation is running - no clearDisplay() / display() of its own.
+  void renderBubble();
+
  private:
   // Draw one alien sprite at (x, y) using the Adafruit_GFX 1-bit format.
   void renderAlien(int frame, int x, int y);
-  // Render the current animation scene (bubble / wave / stand).
+  // Render the current animation scene: push one full frame through
+  // renderScreen() (issue #35, step 5) - the sprite frame is drawn by
+  // drawSprite() and the bubble content by renderBubble(), both from
+  // renderScreen(), WITHOUT touching the bubble's line table (Q4).
   void renderAlienScene();
 
   // The 6 animation state variables (moved here from the .ino globals).

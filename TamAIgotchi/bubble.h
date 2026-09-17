@@ -16,6 +16,11 @@
 //   bubbleRender()       - draw the bubble rectangle (always, even when
 //                          empty) + tail triangle + the visible 5-line
 //                          window into the current frame
+//   bubbleRenderText(t)  - draw the bubble frame + up to 5 lines of `t`
+//                          (or an empty bubble if NULL) WITHOUT touching
+//                          the line table (the stored content survives
+//                          the call - the idle animation uses it, issue
+//                          #35 step 5 follow-up)
 //
 // The bubble is always the same size and always drawn (even when empty) -
 // no popping rectangle (issue #29 Q8). A small ~4 px tail triangle on its
@@ -67,3 +72,14 @@ void bubbleJumpTo(bool toEnd);
 // + the visible BUBBLE_VISIBLE_LINES window of the table into the current
 // frame. No clearDisplay() / display() of its own (see the header note).
 void bubbleRender();
+
+// Draw the bubble frame (rectangle + tail) + up to BUBBLE_VISIBLE_LINES
+// lines of `text` (word-wrapped at BUBBLE_CHARS_PER_LINE, first lines
+// shown) into the current frame WITHOUT touching the line table
+// (bubbleLines / bubbleCount / bubbleOffset) - the stored content (e.g.
+// the response) survives the call. text = NULL draws an empty bubble.
+// Used by the idle-alien animation (alien.renderBubble()) so the
+// animation never destroys the response text (issue #35 step 5
+// follow-up, Q4). No clearDisplay() / display() of its own (see the
+// header note).
+void bubbleRenderText(const char* text);

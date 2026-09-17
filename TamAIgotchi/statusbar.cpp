@@ -2,6 +2,7 @@
 #include "statusbar.h"
 #include <Arduino.h>  // String, Serial, F()
 #include <Adafruit_SSD1306.h>  // for the shared `display` object
+#include "display.h"   // renderScreen() (issue #35, step 5: the single pass)
 
 // The `display` object is defined in hardware.h (included by the sketch);
 // reference it here instead of passing it through every call - the same
@@ -22,23 +23,40 @@ static void statusBlank() {
   display.fillRect(0, 0, SCREEN_WIDTH, 16, BLACK);
 }
 
-// Render the two status lines (y=0 / y=8), mirror both to Serial, flush.
+// The two status lines currently shown (renderScreen(), issue #35, step 5,
+// re-draws them on every frame from this stored state).
+static String statusL1 = "";
+static String statusL2 = "";
+
+// Draw the two status lines (y=0 / y=8) from the stored state into the
+// current frame. No display.display() - renderScreen() owns the panel push
+// (issue #35, step 5 of 6 of the UI restructure in #29).
+void statusShow() {
+  statusBlank();
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+  display.setCursor(0, 0);
+  display.print(statusL1);
+  if (statusL2.length()) {
+    display.setCursor(0, 8);
+    display.print(statusL2);
+  }
+}
+
+// Render the two status lines (y=0 / y=8), mirror both to Serial, then
+// push the full frame through the single render pass (renderScreen(),
+// issue #35, step 5). Each line is truncated to STATUS_CHARS_PER_LINE
+// (21 chars); the two lines are blanked (not cleared) first, so the rest
+// of the frame (alien / bubble) is preserved by renderScreen().
 void statusShow(const String& l1, const String& l2) {
   String a = statusFit(l1);
   String b = statusFit(l2);
   Serial.println(a);
   Serial.println(b);
 
-  statusBlank();
-  display.setTextSize(1);
-  display.setTextColor(WHITE);
-  display.setCursor(0, 0);
-  display.print(a);
-  if (b.length()) {
-    display.setCursor(0, 8);
-    display.print(b);
-  }
-  display.display();
+  statusL1 = a;
+  statusL2 = b;
+  renderScreen();
 }
 
 // 1-arg form: line 2 empty.
@@ -58,8 +76,10 @@ void statusError(const String& title, const String& detail) {
   statusShow(title, detail);
 }
 
-// Blank the two status lines and flush (helper for the step-5 render pass).
+// Blank the two status lines and push the frame through the single render
+// pass (issue #35, step 5).
 void statusClear() {
-  statusBlank();
-  display.display();
+  statusL1 = "";
+  statusL2 = "";
+  renderScreen();
 }

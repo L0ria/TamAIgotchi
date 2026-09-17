@@ -112,9 +112,9 @@ void setup() {
   D_TDLN(localaiUrl);
 
   chat.setModel("gpt-4");           //Model to use for completion. Default is gpt-3.5-turbo
-  D_TDLN(F("chat model: gpt-4, max_tokens: 40, temperature: 0.2"));
+  D_TDLN(F("chat model: gpt-4, max_tokens: 200, temperature: 0.2"));
   chat.setSystem("You are communicating through a small display, keep answers as short as possible");      //Description of the required assistant
-  chat.setMaxTokens(40);            //The maximum number of tokens to generate in the completion.
+  chat.setMaxTokens(LLM_MAX_TOKENS); //The maximum number of tokens to generate (issue #35, step 5 of #29: 40 -> 200 via config.h).
   chat.setTemperature(0.2);         //float between 0 and 2. Higher value gives more random results.
   chat.setStop("\r");               //Up to 4 sequences where the API will stop generating further tokens.
   chat.setPresencePenalty(0);       //float between -2.0 and 2.0. Positive values increase the model's likelihood to talk about new topics.
@@ -237,13 +237,14 @@ void loop() {
     static int           lastPressBtn = -1; // -1 none, 0 = down, 1 = up
     static const unsigned long DOUBLE_PRESS_MS = 500;
 
-    // Re-render the bubble + refresh the "Response x/y" status counter.
-    // Called after every scroll / jump, and on every press (a press also
-    // recovers the screen if the idle animation was running when it
-    // landed, issue #16).
+    // Re-render the frame (single render pass, issue #35, step 5) +
+    // refresh the "Response x/y" status counter. Called after every
+    // scroll / jump, and on every press (a press also recovers the screen
+    // if the idle animation was running when it landed, issue #16: the
+    // bubble still holds the response text, so renderScreen() restores
+    // it - Q4).
     auto renderResponse = []() {
-      display.clearDisplay();
-      bubbleRender();
+      renderScreen();
       statusShow("Response " + String(bubbleScrollOffset() + 1) + "/"
                  + String(bubbleLineCount()));
     };

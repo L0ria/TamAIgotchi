@@ -8,6 +8,7 @@
 #include "recorder.h"   // Recorder (startRecording() touches rec_buf / rec_pos / rec_start)
 #include "statusbar.h"  // statusShow() / statusError() (issue #32, step 2)
 #include "bubble.h"      // bubbleClear() / bubbleRender() (issue #34, step 4)
+#include "display.h"     // renderScreen() (issue #35, step 5)
 
 // Shared objects + state (defined in hardware.h / owned by the sketch);
 // referenced here instead of passed through every call - the same pattern
@@ -17,6 +18,29 @@ extern ESPWifiConfig wifiConfig;
 extern Recorder recorder;
 extern RecState recState;
 extern AlienAnimation alien;
+
+// THE single render pass (issue #35, step 5 of 6 of the UI restructure in
+// #29): one clearDisplay() + one display() per frame.
+//   status bar (top 16 px) -> alien sprite (always present) -> bubble.
+// The status bar draws its two stored lines itself (statusShow() keeps its
+// "store + draw region" job and then calls renderScreen()); the alien and
+// the bubble keep their own current-content state, so renderScreen() just
+// composes them.
+void renderScreen() {
+  display.clearDisplay();
+  statusShow();          // redraw the status bar's two lines (no panel push)
+  alien.drawSprite();    // stand frame / current animation frame (always)
+  // Bubble: while the idle animation runs, the animation owns the bubble
+  // content (bubbleRenderText() - the line table is untouched, so the
+  // response survives the animation, issue #35 step 5 follow-up, Q4);
+  // otherwise the stored table window is drawn as usual.
+  if (alien.state() == ANIM_ACTIVE) {
+    alien.renderBubble();
+  } else {
+    bubbleRender();
+  }
+  display.display();
+}
 
 // Show the current WiFi situation on the display (and Serial).
 //  - AP mode:    show the access point name + IP so it can be configured
@@ -84,9 +108,7 @@ bool startRecording() {
     // empty it and re-draw the (empty) bubble so no stale text lingers
     // under the recording status.
     bubbleClear();
-    display.clearDisplay();
-    bubbleRender();
-    showWifiStatus();
+    showWifiStatus(); // status lines + renderScreen() (issue #35, step 5)
     recorder.rec_pos = 0;
     recorder.rec_start = millis();
     recState = RECORDING;

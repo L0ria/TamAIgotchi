@@ -6,8 +6,8 @@
 #include <esp_heap_caps.h>  // heap_caps_malloc / heap_caps_get_free_size (PSRAM recording buffer)
 #include <OpenAI.h>  // OpenAI_ChatCompletion / OpenAI_AudioTranscription / OpenAI_StringResponse / log_d
 #include "statusbar.h"   // statusShow() / statusError() (issue #33, step 3)
-#include "bubble.h"      // bubbleSetText() / bubbleRender() (prompt in the bubble, issue #33)
-#include <Adafruit_SSD1306.h>  // for the shared `display` object (display.display() after bubbleRender)
+#include "bubble.h"      // bubbleSetText() (prompt in the bubble, issue #33)
+#include "display.h"     // renderScreen() (issue #35, step 5: the single pass)
 
 // Shared objects + helpers declared in TamAIgotchi.ino (the sketch entry
 // point); referenced here instead of passed through every call.
@@ -15,7 +15,6 @@ extern RecState recState;
 extern AlienAnimation alien;  // markActivity() on response ready
 extern OpenAI_ChatCompletion chat;
 extern OpenAI_AudioTranscription audio;
-extern Adafruit_SSD1306 display;  // display.display() after bubbleRender() (issue #33)
 
 bool Recorder::bufferAllocated() const {
   return rec_buf != NULL;
@@ -153,12 +152,10 @@ void Recorder::textGeneration(const String& prompt) {
   // Status bar (issue #33, step 3 of the UI restructure in #29): the
   // "Sending prompt" line becomes a status line, and the prompt text
   // (content, #29 section 4 row 10) goes into the speech bubble (step 1
-  // module). bubbleRender() draws into the frame; display.display()
-  // pushes it to the panel (the single render pass arrives in step 5).
+  // module). renderScreen() pushes the full frame (issue #35, step 5).
   statusShow("Sending prompt...");
   bubbleSetText(prompt);
-  bubbleRender();
-  display.display();
+  renderScreen();
 
   OpenAI_StringResponse result = chat.message(prompt);
   Serial.printf("Received message. Tokens: %u\n", result.tokens());
@@ -192,11 +189,11 @@ void Recorder::textGeneration(const String& prompt) {
   // (issue #34, step 4 of 6 of the UI restructure in #29 - the bubble
   // owns the text table from now on; the old respLines[] response table
   // and renderResponseWindow() are gone). The response is content, so it
-  // lives in the bubble: clear the frame, draw the bubble, then put the
-  // "Response 1/N" counter on status line 1 (issue #29 Q6).
+  // lives in the bubble; then the "Response 1/N" counter goes on status
+  // line 1 (issue #29 Q6). One full frame through renderScreen()
+  // (issue #35, step 5).
   bubbleSetText(response);
-  display.clearDisplay();
-  bubbleRender();
+  renderScreen();
   statusShow("Response 1/" + String(bubbleLineCount()));
   recState = RESPONSE;
   // Issue #16: re-arm the inactivity timer so the animation returns
