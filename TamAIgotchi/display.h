@@ -15,7 +15,7 @@
 // new take starts from the RESPONSE state, issue #34, step 4).
 #pragma once
 
-#include "config.h"      // RESPONSE_*, LED_PIN, D_T*()
+#include "config.h"      // LED_PIN, D_T*()
 #include "recorder.h"    // RecState (startRecording() sets recState)
 #include "alien.h"       // AlienAnimation (renderScreen() draws the sprite)
 

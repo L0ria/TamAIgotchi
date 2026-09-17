@@ -135,6 +135,40 @@ The stock ESP-Wifi-Config truncates WiFi passwords to 30 characters, so this pro
 - Select the correct ESP32 board in the Arduino IDE
 - Click the Compile and Upload button
 
+## UI layout
+
+The 128×64 OLED is split into three regions. The top two lines are the status
+bar; the bottom half holds the alien (lower-left) and the speech bubble (right),
+which carries all content (prompt, response, and the idle `hello`):
+
+```
++--------------------------------------------------+  y=0
+|  status line 1  (max 21 chars)                    |
++--------------------------------------------------+  y=8
+|  status line 2  (max 21 chars)                    |
++--------------------------------------------------+  y=16
+|            |  +--------------------------------+  |
+|            |  |        speech bubble           |  |  x=30..126
+|   alien    |  |   (prompt / response / hello)  |  |  y=18..62
+|  (4..27    |  |         15 chars x 5 lines     |  |
+|   42..63)  |  +--------------------------------+  |
++--------------------------------------------------+  y=64
+```
+
+Buttons (all wired to GND, `INPUT_PULLUP`):
+
+| Button | Short press | Double press | Hold 5 s |
+|---|---|---|---|
+| **GPIO3** (main) | — (it is the hold button) | — | **hold-to-record**: hold while recording (max 10 s), release to send |
+| **GPIO9** | scroll **down** one line | jump to **end** | **reset WiFi settings** & reboot into the setup AP |
+| **GPIO11** | scroll **up** one line | jump to **start** | **exit the response view** back to the idle screen |
+
+The main button (GPIO3) is hold-to-record — the hold is not a 5 s threshold
+action, it records for as long as it is held (capped at 10 s) and sends the
+take on release. The two scroll buttons are only active while the response is
+on screen. Status messages must fit 21 chars × 2 lines — longer text goes to
+the bubble or the serial log, never the display driver clipping.
+
 ## Usage
 
 Hold the button to record: the LED lights up and the microphone records audio for as long as you keep the button pressed (max 10 s).
@@ -143,13 +177,13 @@ The text then is sent as prompt to the LocalAI gpt4 model and the response is sh
 
 ### Scrolling the response
 
-The LLM response can be longer than what fits on the 128×64 display. It is shown as a scrollable window with a `Response: x/y` header (current line / total lines). Use the two side buttons to scroll:
+The LLM response can be longer than what fits in the speech bubble. It is shown as a scrollable 5-line window with a `Response x/y` counter in the status bar (first visible line / total lines). Use the two side buttons to scroll (a double press of the same button jumps to the start / end):
 
-| Button | Short press | Long press (5 s) |
-|---|---|---|
-| **GPIO9** | scroll **down** one line | reset WiFi settings & reboot into the setup AP (existing behavior) |
-| **GPIO11** | scroll **up** one line | exit the response view back to the idle screen |
-| **GPIO3** (main) | start a new recording (same as when idle) | — (hold-to-record) |
+| Button | Short press | Double press | Long press (5 s) |
+|---|---|---|---|
+| **GPIO9** | scroll **down** one line | jump to the **end** | reset WiFi settings & reboot into the setup AP (existing behavior) |
+| **GPIO11** | scroll **up** one line | jump to the **start** | exit the response view back to the idle screen |
+| **GPIO3** (main) | start a new recording (same as when idle) | — | — (it is the hold-to-record button) |
 
 Both scroll buttons are only active while the response is on screen; during recording / sending they are ignored.
 
@@ -165,7 +199,7 @@ After 60 s without any button press (and while WiFi is connected), a small pixel
 
 Any button press stops the animation immediately and returns to the normal record → transcribe → prompt → response flow. After the response has been shown for 60 s without a button press, the animation loop starts again.
 
-All timings and the bubble text are configurable via the `ALIEN_*` defines in `TamAIgotchi/config.h` (e.g. `ALIEN_BUBBLE_TEXT`).
+All timings are configurable via the `ALIEN_*` defines in `TamAIgotchi/config.h`; the bubble text is `MSG_ALIEN_BUBBLE` in `TamAIgotchi/messages.h`.
 
 ## Debug output
 

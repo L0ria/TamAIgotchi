@@ -74,15 +74,6 @@ static const char* api_key = "sk1234567890";
 #define SCROLL_DOWN_PIN  9   // same physical button as WIFI_CONFIG_BUTTON_PIN (alias, issue #13)
 #define SCROLL_UP_PIN 11     // short: scroll response up (was RESERVE_BUTTON_PIN) · hold 5 s → exit the response view
 
-// Scrollable response view (issue #13): the LLM reply is word-wrapped into
-// a static line table and shown as a RESPONSE_VISIBLE_LINES window below a
-// "Response: x/y" header (x = first visible line, y = total lines).
-// 16 lines x 22 bytes ≈ 350 B of static RAM — a generous upper bound for a
-// 40-token answer (~330 chars at most).
-#define RESPONSE_CHARS_PER_LINE 21  // 128 px / 6 px per char (font size 1)
-#define RESPONSE_VISIBLE_LINES 6   // 8 display lines: 1 header + 1 blank separator + 6 response lines
-#define RESPONSE_MAX_LINES 16      // capacity of the static line table
-
 // ---------------------------------------------------------------------------
 // Speech-bubble widget (issue #31, step 1 of 6 of the UI restructure in #29).
 // The bubble sits to the right of the alien (which stays at x 4..27 /
@@ -90,7 +81,6 @@ static const char* api_key = "sk1234567890";
 // "hello") in later steps. It is always the same size and always drawn (even
 // when empty) - no popping rectangle (issue #29 Q8). A small ~4 px tail
 // triangle on its left edge points toward the alien (issue #29 Q9, cosmetic).
-// The old RESPONSE_* constants above stay until step 6 removes them.
 //   BUBBLE_X / BUBBLE_Y / BUBBLE_W / BUBBLE_H - the bubble rectangle:
 //     x 30..126 (W = 97), y 18..62 (H = 45).
 //   BUBBLE_CHARS_PER_LINE - 15 chars x 6 px = 90 px of text, fits BUBBLE_W
@@ -134,11 +124,9 @@ static const char* api_key = "sk1234567890";
 //   ALIEN_WAVE_MS             - duration of the jump & wave phase
 //   ALIEN_STAND_MS            - duration of the standing-still phase
 //   ALIEN_FRAME_MS            - sprite frame swap interval during the wave phase
-//   ALIEN_BUBBLE_TEXT         - text shown in the speech bubble (configurable)
 #define ALIEN_IDLE_TIMEOUT_MS     60000UL
 #define ALIEN_RESPONSE_TIMEOUT_MS 60000UL
 #define ALIEN_BUBBLE_MS           4000UL
 #define ALIEN_WAVE_MS             16000UL
 #define ALIEN_STAND_MS            30000UL
 #define ALIEN_FRAME_MS            250UL
-#define ALIEN_BUBBLE_TEXT "hello"

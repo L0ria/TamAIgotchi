@@ -10,8 +10,8 @@
 //   recorder.h   - PSRAM recording buffer + SENDING/RESPONSE flow
 //   alien.h      - the idle-alien animation (issue #16)
 //   buttons.h    - the debounced buttons (step 2)
-//   text_utils.h - combinedOutput() / wrapText() (step 1; displayError()
-//                  removed in step 3, issue #33)
+//   text_utils.h - wrapText() (step 1; the display-role helpers were
+//                  removed during the UI restructure in #29, issues #33/#36)
 //   statusbar.h  - statusShow() / statusError() / statusClear() (step 2,
 //                  issue #32: the top two lines are the status bar)
 #include "hardware.h"   // shared hardware objects + hardwareInit()
@@ -21,6 +21,7 @@
 #include "recorder.h"   // Recorder + RecState
 #include "alien.h"      // AlienAnimation
 #include "statusbar.h"  // statusShow() / statusError() (issue #32, step 2)
+#include "messages.h"   // MSG_* user-facing display strings (issue #36, step 6)
 #include "bubble.h"     // bubbleScroll() / bubbleJumpTo() / bubbleRender() (issue #34, step 4)
 
 // State machine (issue #9 + issue #13):
@@ -80,7 +81,7 @@ void setup() {
   D_TDLN(F("LocalAI settings registered (LOCALAI_URL, LOCALAI_KEY)"));
 
 /* connect to WiFi (or start the setup access point) */
-  statusShow("Connecting to WiFi...");
+  statusShow(MSG_WIFI_CONNECTING);
   if (wifiConfig.initialize() == AP_MODE) {
     // No known network was reachable: the device is broadcasting an access
     // point. Keep the setup web server running so the WiFi can be configured.
@@ -191,7 +192,7 @@ void loop() {
     static unsigned long recSecondsShown = 0;
     if (recSeconds != recSecondsShown) {
       recSecondsShown = recSeconds;
-      statusShow("Recording (max 10 s)", String(recSeconds) + " s");
+      statusShow(MSG_RECORDING, String(recSeconds) + " s");
     }
 
     // Stop conditions (checked after every chunk):
@@ -245,7 +246,7 @@ void loop() {
     // it - Q4).
     auto renderResponse = []() {
       renderScreen();
-      statusShow("Response " + String(bubbleScrollOffset() + 1) + "/"
+      statusShow(MSG_RESPONSE_PREFIX + String(bubbleScrollOffset() + 1) + "/"
                  + String(bubbleLineCount()));
     };
 

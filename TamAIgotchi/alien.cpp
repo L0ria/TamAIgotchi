@@ -1,7 +1,8 @@
 // Idle-alien animation (issue #16) — the state machine + rendering (extracted
 // from TamAIgotchi.ino as step 4 of the refactoring proposed in issue #18).
 #include "alien.h"
-#include "config.h"   // ALIEN_* timings + ALIEN_BUBBLE_TEXT
+#include "config.h"   // ALIEN_* timings
+#include "messages.h" // MSG_ALIEN_BUBBLE (idle bubble text, issue #36, step 6)
 #include "recorder.h" // Recorder (rec_buf + recState)
 #include <Arduino.h>  // millis(), Serial, F()
 #include <Adafruit_SSD1306.h>  // for the shared `display` object
@@ -55,13 +56,13 @@ void AlienAnimation::drawSprite() {
 // Draw the animation's bubble content into the current frame WITHOUT
 // touching the bubble's line table (issue #35 step 5 follow-up, Q4: the
 // stored response text must survive the animation): the bubble phases
-// (0 / 2) show ALIEN_BUBBLE_TEXT (issue #29 Q8: the bubble is always the
+// (0 / 2) show MSG_ALIEN_BUBBLE (issue #29 Q8: the bubble is always the
 // same size - no small bubble, no popping rectangle), the wave phases
 // (1 / 3) and the stand phase (4) show an empty bubble. Called by
 // renderScreen() (display.cpp) while the animation is running.
 void AlienAnimation::renderBubble() {
   if (alienPhase == 0 || alienPhase == 2) {
-    bubbleRenderText(ALIEN_BUBBLE_TEXT);
+    bubbleRenderText(MSG_ALIEN_BUBBLE);
   } else {
     bubbleRenderText(NULL);
   }
