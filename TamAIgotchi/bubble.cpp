@@ -108,7 +108,7 @@ void bubbleRender() {
   if (bubbleOffset < 0) bubbleOffset = 0;
   if (bubbleOffset > maxOffset) bubbleOffset = maxOffset;
 
-  bubbleDrawFrame(&bubbleLines[0], bubbleCount - bubbleOffset);
+  bubbleDrawFrame(&bubbleLines[bubbleOffset], bubbleCount - bubbleOffset);
 }
 
 // Draw the bubble frame + up to BUBBLE_VISIBLE_LINES lines of `text`
