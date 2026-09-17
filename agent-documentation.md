@@ -46,7 +46,7 @@ lines of the 128×64 panel — `STATUS_CHARS_PER_LINE`).
   idle animation runs.
 - The bubble rectangle is x 30..126 / y 18..62 (`BUBBLE_X/Y/W/H` in config.h).
 - The idle animation draws its bubble content **without touching the bubble's
-  line table** (`bubbleRenderText()`), so the stored response survives the
+  line table** (`bubble.renderText()`), so the stored response survives the
   animation (issue #35 step 5 follow-up, Q4). Keep that.
 
 ## Button semantics (must not drift)

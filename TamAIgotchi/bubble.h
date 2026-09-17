@@ -1,22 +1,23 @@
-// Speech-bubble widget (issue #31, step 1 of 6 of the UI restructure in #29).
+// Speech-bubble widget (issue #31, step 1 of 6 of the UI restructure in #29;
+// wrapped in the Bubble class in step 2 of 11 of the refactoring plan in
+// #42, issue #45).
 //
 // Provides the geometry, text table, scrolling and rendering for the bubble
-// that will host ALL content (prompt, response, the idle "hello") in the
-// later steps. Pure addition - nothing calls it yet, so this step has zero
-// behavior change (compile-only verification).
+// that hosts ALL content (prompt, response, the idle "hello"). Pure
+// 1:1 wrap of the former free functions - behavior is unchanged.
 //
-//   bubbleSetText(text)  - word-wrap into the static 64-line table (15
+//   bubble.setText(text) - word-wrap into the static 64-line table (15
 //                          chars/line), reset the scroll offset to 0
-//   bubbleScroll(down)   - move the offset by 1 line, clamped to
+//   bubble.scroll(down)  - move the offset by 1 line, clamped to
 //                          [0, max(0, count - BUBBLE_VISIBLE_LINES)]
-//   bubbleClear()        - empty table, offset 0
-//   bubbleLineCount()    - number of wrapped lines in use (the "Response
+//   bubble.clear()       - empty table, offset 0
+//   bubble.lineCount()   - number of wrapped lines in use (the "Response
 //                          x/y" status counter, step 4)
-//   bubbleScrollOffset() - index of the first visible line
-//   bubbleRender()       - draw the bubble rectangle (always, even when
+//   bubble.scrollOffset()- index of the first visible line
+//   bubble.render()      - draw the bubble rectangle (always, even when
 //                          empty) + tail triangle + the visible 5-line
 //                          window into the current frame
-//   bubbleRenderText(t)  - draw the bubble frame + up to 5 lines of `t`
+//   bubble.renderText(t) - draw the bubble frame + up to 5 lines of `t`
 //                          (or an empty bubble if NULL) WITHOUT touching
 //                          the line table (the stored content survives
 //                          the call - the idle animation uses it, issue
@@ -31,55 +32,81 @@
 // object is referenced via extern, the same pattern as the other modules
 // (text_utils.cpp / alien.cpp / recorder.cpp / display.cpp).
 //
-// bubbleRender() does NOT clearDisplay() or display() on its own - the
-// single render pass (one clearDisplay() + one display() per frame) arrives
-// in step 5. For now it may be called after the caller has drawn the rest
-// of the scene, and the caller issues display.display().
+// bubble.render() does NOT clearDisplay() or display() on its own - the
+// single render pass (one clearDisplay() + one display() per frame) is
+// issued by renderScreen() (display.cpp). It may be called after the
+// caller has drawn the rest of the scene.
 #pragma once
 
 #include "config.h"  // BUBBLE_* geometry + table size
 
 class String;  // forward declaration (complete type via <Arduino.h> in the .cpp)
 
-// Word-wrap `text` into the static 64-line table at BUBBLE_CHARS_PER_LINE
-// chars/line (via the new width-parameterized wrapText()) and reset the
-// scroll offset to 0. Lines beyond BUBBLE_MAX_LINES are dropped (same
-// silent-truncation behavior as the response view today).
-void bubbleSetText(const String& text);
+// The speech-bubble widget: word-wrapped text table + scrolling + rendering
+// (see the header note for the API). The state (lines_ / count_ / offset_)
+// is private; the line table is a single static 1 KB definition shared by
+// all instances (there is one - the shared `bubble` object).
+class Bubble {
+ public:
+  // Word-wrap `text` into the static 64-line table at
+  // BUBBLE_CHARS_PER_LINE chars/line (via the width-parameterized
+  // wrapText()) and reset the scroll offset to 0. Lines beyond
+  // BUBBLE_MAX_LINES are dropped (same silent-truncation behavior as the
+  // response view before the wrap).
+  void setText(const String& text);
 
-// Move the scroll offset by 1 line (down = +1, up = -1), clamped to
-// [0, max(0, count - BUBBLE_VISIBLE_LINES)].
-void bubbleScroll(bool down);
+  // Move the scroll offset by 1 line (down = +1, up = -1), clamped to
+  // [0, max(0, count - BUBBLE_VISIBLE_LINES)].
+  void scroll(bool down);
 
-// Empty the table and reset the scroll offset to 0.
-void bubbleClear();
+  // Empty the table and reset the scroll offset to 0.
+  void clear();
 
-// Number of wrapped lines actually in use (for the "Response x/y" status
-// counter, step 4).
-int bubbleLineCount();
+  // Number of wrapped lines actually in use (for the "Response x/y" status
+  // counter, step 4).
+  int lineCount() const;
 
-// Index of the first visible line (for the "Response x/y" status counter,
-// step 4).
-int bubbleScrollOffset();
+  // Index of the first visible line (for the "Response x/y" status counter,
+  // step 4).
+  int scrollOffset() const;
 
-// Jump the scroll offset to the start (toEnd = false: the first line) or
-// the end (toEnd = true: the last visible window). Used by the
-// double-press jump (issue #34, step 4 of 6 of the UI restructure in #29
-// - option A from #29 Q7).
-void bubbleJumpTo(bool toEnd);
+  // Jump the scroll offset to the start (toEnd = false: the first line) or
+  // the end (toEnd = true: the last visible window). Used by the
+  // double-press jump (issue #34, step 4 of 6 of the UI restructure in #29
+  // - option A from #29 Q7).
+  void jumpTo(bool toEnd);
 
-// Draw the bubble rectangle (always, even when empty) + the tail triangle
-// + the visible BUBBLE_VISIBLE_LINES window of the table into the current
-// frame. No clearDisplay() / display() of its own (see the header note).
-void bubbleRender();
+  // Draw the bubble rectangle (always, even when empty) + the tail triangle
+  // + the visible BUBBLE_VISIBLE_LINES window of the table into the current
+  // frame. No clearDisplay() / display() of its own (see the header note).
+  void render();
 
-// Draw the bubble frame (rectangle + tail) + up to BUBBLE_VISIBLE_LINES
-// lines of `text` (word-wrapped at BUBBLE_CHARS_PER_LINE, first lines
-// shown) into the current frame WITHOUT touching the line table
-// (bubbleLines / bubbleCount / bubbleOffset) - the stored content (e.g.
-// the response) survives the call. text = NULL draws an empty bubble.
-// Used by the idle-alien animation (alien.renderBubble()) so the
-// animation never destroys the response text (issue #35 step 5
-// follow-up, Q4). No clearDisplay() / display() of its own (see the
-// header note).
-void bubbleRenderText(const char* text);
+  // Draw the bubble frame (rectangle + tail) + up to BUBBLE_VISIBLE_LINES
+  // lines of `text` (word-wrapped at BUBBLE_CHARS_PER_LINE, first lines
+  // shown) into the current frame WITHOUT touching the line table
+  // (lines_ / count_ / offset_) - the stored content (e.g. the response)
+  // survives the call. text = NULL draws an empty bubble. Used by the
+  // idle-alien animation (alien.renderBubble()) so the animation never
+  // destroys the response text (issue #35 step 5 follow-up, Q4). No
+  // clearDisplay() / display() of its own (see the header note).
+  void renderText(const char* text);
+
+ private:
+  // The static line table (BUBBLE_MAX_LINES x 16 B = 1 KB of static RAM,
+  // issue #29 Q7) - one definition, shared by all instances.
+  static char lines_[BUBBLE_MAX_LINES][BUBBLE_CHARS_PER_LINE + 1];
+  int count_ = 0;    // wrapped lines actually in use
+  int offset_ = 0;   // index of the first visible line
+
+  // Draw the bubble frame (rectangle + interior clear + tail) + up to
+  // BUBBLE_VISIBLE_LINES lines of `lines` (the first `count` are valid)
+  // into the current frame. Shared by render() (the stored table window)
+  // and renderText() (a transient text, table untouched). `lines` is a
+  // pointer to the first row of a [..][BUBBLE_CHARS_PER_LINE + 1] table.
+  static void drawFrame(char (*lines)[BUBBLE_CHARS_PER_LINE + 1], int count);
+};
+
+// The shared bubble object (the codebase's existing shared-object pattern;
+// the instance is defined in TamAIgotchi.ino next to the other shared
+// objects, the same pattern as the shared `display` object).
+extern Bubble bubble;

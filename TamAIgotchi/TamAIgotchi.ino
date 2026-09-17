@@ -22,7 +22,7 @@
 #include "alien.h"      // AlienAnimation
 #include "statusbar.h"  // statusShow() / statusError() (issue #32, step 2)
 #include "messages.h"   // MSG_* user-facing display strings (issue #36, step 6)
-#include "bubble.h"     // bubbleScroll() / bubbleJumpTo() / bubbleRender() (issue #34, step 4)
+#include "bubble.h"     // bubble (scroll / jump / render, issue #34, step 4)
 
 // State machine (issue #9 + issue #13):
 //   IDLE      - waiting for a debounced button press
@@ -60,6 +60,12 @@ Recorder recorder;
 // machine + rendering (markActivity() on button events, update() each pass).
 // See alien.h.
 AlienAnimation alien;
+
+// Bubble (step 2 of 11 of the refactoring in #42, issue #45): the shared
+// speech-bubble object (the codebase's existing shared-object pattern -
+// the instance lives in the sketch, the modules reference it via the
+// extern in bubble.h, same as `display`).
+Bubble bubble;
 
 void setup() {
   Serial.begin(115200);
@@ -246,8 +252,8 @@ void loop() {
     // it - Q4).
     auto renderResponse = []() {
       renderScreen();
-      statusShow(MSG_RESPONSE_PREFIX + String(bubbleScrollOffset() + 1) + "/"
-                 + String(bubbleLineCount()));
+      statusShow(MSG_RESPONSE_PREFIX + String(bubble.scrollOffset() + 1) + "/"
+                 + String(bubble.lineCount()));
     };
 
     // GPIO9 (scroll down): short press = next line; double press = jump to
@@ -258,11 +264,11 @@ void loop() {
       unsigned long now = millis();
       bool isDouble = (lastPressBtn == 0) && ((now - lastPressMs) < DOUBLE_PRESS_MS);
       if (isDouble) {
-        bubbleJumpTo(true);
+        bubble.jumpTo(true);
         D_TDLN(F("double-press down: jump to end"));
       } else {
-        bubbleScroll(true);
-        D_TD(F("scroll down ")); D_TDLN(bubbleScrollOffset() + 1);
+        bubble.scroll(true);
+        D_TD(F("scroll down ")); D_TDLN(bubble.scrollOffset() + 1);
       }
       lastPressMs = now;
       lastPressBtn = 0;
@@ -273,7 +279,7 @@ void loop() {
     if (scrollUpBtn.isLongPressed()) {
       Serial.println(F("Scroll-up button held 5 s - exiting response view"));
       D_TDLN(F("scroll-up button long-press: back to IDLE"));
-      bubbleClear(); // Q4: the response is removed when we leave the view
+      bubble.clear(); // Q4: the response is removed when we leave the view
       recState = IDLE;
       showWifiStatus(); // also marks activity (issue #16)
       mainBtn.reset(); // re-arm the main button for the next press
@@ -284,11 +290,11 @@ void loop() {
       unsigned long now = millis();
       bool isDouble = (lastPressBtn == 1) && ((now - lastPressMs) < DOUBLE_PRESS_MS);
       if (isDouble) {
-        bubbleJumpTo(false);
+        bubble.jumpTo(false);
         D_TDLN(F("double-press up: jump to start"));
       } else {
-        bubbleScroll(false);
-        D_TD(F("scroll up ")); D_TDLN(bubbleScrollOffset() + 1);
+        bubble.scroll(false);
+        D_TD(F("scroll up ")); D_TDLN(bubble.scrollOffset() + 1);
       }
       lastPressMs = now;
       lastPressBtn = 1;

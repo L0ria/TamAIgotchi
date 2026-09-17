@@ -24,6 +24,7 @@ mkdir -p tests/build
 MODULES=(
   TamAIgotchi/text_utils.cpp
   TamAIgotchi/buttons.cpp
+  TamAIgotchi/bubble.cpp
 )
 
 # Test files (one per module, plus the harness).
@@ -31,6 +32,7 @@ TESTS=(
   tests/test_main.cpp
   tests/test_text_utils.cpp
   tests/test_buttons.cpp
+  tests/test_bubble.cpp
 )
 
 echo "[run_tests] compiling: ${MODULES[*]}"

@@ -1,4 +1,6 @@
-// Speech-bubble widget (issue #31, step 1 of 6 of the UI restructure in #29).
+// Speech-bubble widget (issue #31, step 1 of 6 of the UI restructure in #29;
+// wrapped in the Bubble class in step 2 of 11 of the refactoring plan in
+// #42, issue #45 - 1:1 wrap, behavior unchanged).
 #include "bubble.h"
 #include <Arduino.h>  // String, Serial, F()
 #include <Adafruit_SSD1306.h>  // for the shared `display` object
@@ -11,67 +13,65 @@ extern Adafruit_SSD1306 display;
 
 // The bubble owns its own static line table (BUBBLE_MAX_LINES x 16 B =
 // 1 KB of static RAM, issue #29 Q7) - no globals in the sketch. The state
-// variables are named bubbleCount / bubbleOffset (not bubbleLineCount /
-// bubbleScrollOffset, which are the public accessor functions below).
-static char bubbleLines[BUBBLE_MAX_LINES][BUBBLE_CHARS_PER_LINE + 1];
-static int  bubbleCount  = 0;  // wrapped lines actually in use
-static int  bubbleOffset = 0;  // index of the first visible line
+// variables are named count_ / offset_ (the accessors are lineCount() /
+// scrollOffset()). One definition, shared by all instances (there is one:
+// the shared `bubble` object).
+char Bubble::lines_[BUBBLE_MAX_LINES][BUBBLE_CHARS_PER_LINE + 1];
 
 // Word-wrap `text` into the static table at BUBBLE_CHARS_PER_LINE
 // chars/line and reset the scroll offset to 0.
-void bubbleSetText(const String& text) {
+void Bubble::setText(const String& text) {
   char* out[BUBBLE_MAX_LINES];
-  for (int i = 0; i < BUBBLE_MAX_LINES; i++) out[i] = bubbleLines[i];
-  bubbleCount = wrapText(text, out, BUBBLE_CHARS_PER_LINE, BUBBLE_MAX_LINES);
-  bubbleOffset = 0;
+  for (int i = 0; i < BUBBLE_MAX_LINES; i++) out[i] = lines_[i];
+  count_ = wrapText(text, out, BUBBLE_CHARS_PER_LINE, BUBBLE_MAX_LINES);
+  offset_ = 0;
 }
 
 // Move the scroll offset by 1 line (down = +1, up = -1), clamped to
 // [0, max(0, count - BUBBLE_VISIBLE_LINES)].
-void bubbleScroll(bool down) {
-  int maxOffset = (bubbleCount > BUBBLE_VISIBLE_LINES)
-                ? bubbleCount - BUBBLE_VISIBLE_LINES
+void Bubble::scroll(bool down) {
+  int maxOffset = (count_ > BUBBLE_VISIBLE_LINES)
+                ? count_ - BUBBLE_VISIBLE_LINES
                 : 0;
   if (down) {
-    if (bubbleOffset < maxOffset) bubbleOffset++;
+    if (offset_ < maxOffset) offset_++;
   } else {
-    if (bubbleOffset > 0) bubbleOffset--;
+    if (offset_ > 0) offset_--;
   }
 }
 
 // Empty the table and reset the scroll offset to 0.
-void bubbleClear() {
-  for (int i = 0; i < BUBBLE_MAX_LINES; i++) bubbleLines[i][0] = '\0';
-  bubbleCount = 0;
-  bubbleOffset = 0;
+void Bubble::clear() {
+  for (int i = 0; i < BUBBLE_MAX_LINES; i++) lines_[i][0] = '\0';
+  count_ = 0;
+  offset_ = 0;
 }
 
-int bubbleLineCount() { return bubbleCount; }
-int bubbleScrollOffset() { return bubbleOffset; }
+int Bubble::lineCount() const { return count_; }
+int Bubble::scrollOffset() const { return offset_; }
 
 // Jump the scroll offset to the start (first line) or the end (last
 // visible window). The double-press jump (issue #34, step 4 of 6 of the
 // UI restructure in #29 - option A from #29 Q7): the same scroll button
 // pressed twice within ~500 ms jumps to the start / end so long answers
 // (~50+ wrapped lines) can be reached without ~45 single presses.
-void bubbleJumpTo(bool toEnd) {
+void Bubble::jumpTo(bool toEnd) {
   if (toEnd) {
-    bubbleOffset = (bubbleCount > BUBBLE_VISIBLE_LINES)
-                 ? bubbleCount - BUBBLE_VISIBLE_LINES
-                 : 0;
+    offset_ = (count_ > BUBBLE_VISIBLE_LINES)
+             ? count_ - BUBBLE_VISIBLE_LINES
+             : 0;
   } else {
-    bubbleOffset = 0;
+    offset_ = 0;
   }
 }
 
 // Draw the bubble frame (rectangle + interior clear + tail) + up to
 // BUBBLE_VISIBLE_LINES lines of `lines[]` (the first `count` are valid)
-// into the current frame. Shared by bubbleRender() (the stored table
-// window) and bubbleRenderText() (a transient text, table untouched).
+// into the current frame. Shared by render() (the stored table window)
+// and renderText() (a transient text, table untouched).
 // Text is padded 3 px in from the left edge and starts 3 px below the top
 // edge (font 1 = 6x8 px/char).
-template <typename LineBuf>
-static void bubbleDrawFrame(LineBuf lines, int count) {
+void Bubble::drawFrame(char (*lines)[BUBBLE_CHARS_PER_LINE + 1], int count) {
   // The bubble rectangle - always the same size, always drawn (issue #29 Q8).
   display.drawRect(BUBBLE_X, BUBBLE_Y, BUBBLE_W, BUBBLE_H, WHITE);
 
@@ -98,34 +98,34 @@ static void bubbleDrawFrame(LineBuf lines, int count) {
 // Draw the bubble rectangle (always, even when empty) + the tail triangle
 // + the visible BUBBLE_VISIBLE_LINES window of the table into the current
 // frame. No clearDisplay() / display() of its own (the single render pass
-// arrives in step 5; the caller issues display.display()).
-void bubbleRender() {
+// is renderScreen() in display.cpp; it issues display.display()).
+void Bubble::render() {
   // The visible window of the table (BUBBLE_VISIBLE_LINES lines), starting
-  // at bubbleScrollOffset.
-  int maxOffset = (bubbleCount > BUBBLE_VISIBLE_LINES)
-                ? bubbleCount - BUBBLE_VISIBLE_LINES
+  // at scrollOffset.
+  int maxOffset = (count_ > BUBBLE_VISIBLE_LINES)
+                ? count_ - BUBBLE_VISIBLE_LINES
                 : 0;
-  if (bubbleOffset < 0) bubbleOffset = 0;
-  if (bubbleOffset > maxOffset) bubbleOffset = maxOffset;
+  if (offset_ < 0) offset_ = 0;
+  if (offset_ > maxOffset) offset_ = maxOffset;
 
-  bubbleDrawFrame(&bubbleLines[bubbleOffset], bubbleCount - bubbleOffset);
+  drawFrame(&lines_[offset_], count_ - offset_);
 }
 
 // Draw the bubble frame + up to BUBBLE_VISIBLE_LINES lines of `text`
 // (word-wrapped at BUBBLE_CHARS_PER_LINE, first lines shown) into the
-// current frame WITHOUT touching the line table (bubbleLines /
-// bubbleCount / bubbleOffset) - the stored content (e.g. the response)
-// survives the call (issue #35 step 5 follow-up, Q4: the idle animation
-// must not destroy the response text). text = NULL draws an empty bubble.
+// current frame WITHOUT touching the line table (lines_ / count_ /
+// offset_) - the stored content (e.g. the response) survives the call
+// (issue #35 step 5 follow-up, Q4: the idle animation must not destroy
+// the response text). text = NULL draws an empty bubble.
 // No clearDisplay() / display() of its own (see the header note).
-void bubbleRenderText(const char* text) {
+void Bubble::renderText(const char* text) {
   if (text == NULL) {
-    bubbleDrawFrame(&bubbleLines[0], 0);  // valid pointer, zero lines
+    drawFrame(&lines_[0], 0);  // valid pointer, zero lines
     return;
   }
   char lines[BUBBLE_VISIBLE_LINES][BUBBLE_CHARS_PER_LINE + 1];
   char* out[BUBBLE_VISIBLE_LINES];
   for (int i = 0; i < BUBBLE_VISIBLE_LINES; i++) out[i] = lines[i];
   int count = wrapText(String(text), out, BUBBLE_CHARS_PER_LINE, BUBBLE_VISIBLE_LINES);
-  bubbleDrawFrame(&lines[0], count);
+  drawFrame(&lines[0], count);
 }

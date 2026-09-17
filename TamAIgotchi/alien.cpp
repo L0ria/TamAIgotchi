@@ -7,7 +7,7 @@
 #include <Arduino.h>  // millis(), Serial, F()
 #include <Adafruit_SSD1306.h>  // for the shared `display` object
 #include <ESPWifiConfig.h>     // for the shared `wifiConfig` object (canAnimate)
-#include "bubble.h"     // bubbleRenderText() (issue #35, step 5 follow-up)
+#include "bubble.h"     // bubble.renderText() (issue #35, step 5 follow-up)
 #include "display.h"    // renderScreen() (issue #35, step 5: the single pass)
 
 // Shared objects + state declared in TamAIgotchi.ino (the sketch entry
@@ -62,9 +62,9 @@ void AlienAnimation::drawSprite() {
 // renderScreen() (display.cpp) while the animation is running.
 void AlienAnimation::renderBubble() {
   if (alienPhase == 0 || alienPhase == 2) {
-    bubbleRenderText(MSG_ALIEN_BUBBLE);
+    bubble.renderText(MSG_ALIEN_BUBBLE);
   } else {
-    bubbleRenderText(NULL);
+    bubble.renderText(NULL);
   }
 }
 
