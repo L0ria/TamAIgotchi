@@ -103,7 +103,7 @@ class AlienAnimation {
 
   // Draw the animation's bubble content into the current frame WITHOUT
   // touching the bubble's line table (issue #35 step 5 follow-up, Q4: the
-  // stored response text must survive the animation): ALIEN_BUBBLE_TEXT in
+  // stored response text must survive the animation): MSG_ALIEN_BUBBLE in
   // the bubble phases (0 / 2), an empty bubble in the wave / stand phases
   // (1 / 3 / 4). Called by renderScreen() (display.cpp) while the
   // animation is running - no clearDisplay() / display() of its own.

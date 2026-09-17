@@ -1,18 +1,15 @@
 // Text utilities for the OLED display (extracted from TamAIgotchi.ino as
 // step 1 of the refactoring proposed in issue #18).
 //
-//   combinedOutput() - print a line to Serial AND the display
-//   wrapText()       - word-wrap a String into fixed-width char lines
+//   wrapText() - word-wrap a String into fixed-width char lines
 //
-// (displayError() was removed in step 3 of the UI restructure in #29,
-// issue #33 - the 2-line status-bar form statusError() replaced it.)
-//
-// Both use the shared `display` object declared in TamAIgotchi.ino.
+// The display-role helper that used to live here was replaced by the status
+// bar (statusShow() / statusError(), issue #32, step 2) and removed during
+// the UI restructure in #29 (issues #33 / #36) - this module is wrapText()
+// only.
 #pragma once
 
 class String;  // forward declaration (complete type via <Arduino.h> in the .cpp)
-
-void combinedOutput(int x, int y, char* line, bool clrscr);
 
 // Word-wrap text into fixed-width lines (issue #13): one word per line
 // boundary, words longer than the line width are hard-broken, existing
@@ -28,4 +25,3 @@ void combinedOutput(int x, int y, char* line, bool clrscr);
 //   maxLines - capacity of out[]
 // Used by the speech-bubble widget (bubble.cpp).
 int wrapText(const String& text, char* out[], int width, int maxLines);
-

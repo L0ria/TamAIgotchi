@@ -7,6 +7,7 @@
 #include "alien.h"      // AlienAnimation (markActivity re-arms the idle timer)
 #include "recorder.h"   // Recorder (startRecording() touches rec_buf / rec_pos / rec_start)
 #include "statusbar.h"  // statusShow() / statusError() (issue #32, step 2)
+#include "messages.h"   // MSG_* user-facing display strings (issue #36, step 6)
 #include "bubble.h"      // bubbleClear() / bubbleRender() (issue #34, step 4)
 #include "display.h"     // renderScreen() (issue #35, step 5)
 
@@ -53,7 +54,7 @@ void showWifiStatus() {
     // AP mode (issue #29 Q2): line 1 = AP name, line 2 = setup address.
     // No "No WiFi - join AP" line. The full setup URL goes to Serial.
     statusShow(wifiConfig.get_AP_name(),
-               String("192.168.4.1:") + WIFI_SETUP_PORT);
+               String(MSG_AP_IP_PREFIX) + WIFI_SETUP_PORT);
     Serial.print(F("AP name: "));
     Serial.println(wifiConfig.get_AP_name());
     Serial.print(F("Setup URL: http://"));
@@ -63,14 +64,14 @@ void showWifiStatus() {
   } else if (wifiConfig.wifi_connected) {
     // STA (issue #29 Q3): line 1 = "WiFi: <SSID>" (SSID truncated to 16
     // chars, no ellipsis - 21 - 5), line 2 = "IP: x.x.x.x".
-    statusShow(String("WiFi: ") + WiFi.SSID().substring(0, 16),
-               String("IP: ") + wifiConfig.ESP_IP.toString());
+    statusShow(String(MSG_WIFI_PREFIX) + WiFi.SSID().substring(0, 16),
+               String(MSG_IP_PREFIX) + wifiConfig.ESP_IP.toString());
     Serial.print(F("Connected to "));
     Serial.print(WiFi.SSID());
     Serial.print(F(" IP: "));
     Serial.println(wifiConfig.ESP_IP.toString());
   } else {
-    statusShow("Connecting to WiFi...");
+    statusShow(MSG_WIFI_CONNECTING);
   }
   alien.markActivity(); // issue #16: showWifiStatus() is always the result of
                        // a button press (or boot) - re-arm the idle timer
@@ -86,7 +87,7 @@ void showWifiStatus() {
 void resetWifiSettingsAndRestart() {
   wifiConfig.resetAllSettings(); // public library helper (v2.3.0), all settings
   Serial.println(F("WiFi settings reset. Rebooting into setup AP mode..."));
-  statusShow("WiFi settings reset.", "Rebooting to setup...");
+  statusShow(MSG_WIFI_RESET, MSG_WIFI_REBOOT);
   delay(300);
   ESP.restart();
 }
@@ -98,7 +99,7 @@ bool startRecording() {
   if (recorder.rec_buf == NULL) {
     // Recording buffer allocation failed at boot: keep the error
     // visible, do not start a take.
-    statusError("Rec buf alloc failed", "Reboot the device.");
+    statusError(MSG_REC_BUF_FAIL, MSG_REBOOT_DEVICE);
     return false;
   }
   if (wifiConfig.ESP_mode != AP_MODE && wifiConfig.wifi_connected) {
@@ -117,7 +118,7 @@ bool startRecording() {
     // = "Recording (max 10 s)" (20 chars, fits the 21-char limit); line 2
     // counts up the elapsed seconds from the RECORDING branch of loop()
     // (throttled to once per whole second).
-    statusShow("Recording (max 10 s)");
+    statusShow(MSG_RECORDING);
     D_TDLN(F("recording start (hold button, max 10 s)"));
     return true;
   }

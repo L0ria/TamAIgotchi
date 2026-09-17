@@ -16,7 +16,7 @@
 #pragma once
 #include <cstddef>  // size_t
 #include <cstdint>  // uint8_t
-#include "config.h"  // MAX_REC_SECONDS, REC_SAFETY_MARGIN_KB, RESPONSE_*
+#include "config.h"  // MAX_REC_SECONDS, REC_SAFETY_MARGIN_KB
 
 class String;  // forward declaration (complete type via <Arduino.h> in the .cpp)
 

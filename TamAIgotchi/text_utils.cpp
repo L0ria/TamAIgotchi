@@ -2,21 +2,6 @@
 // step 1 of the refactoring proposed in issue #18).
 #include "text_utils.h"
 #include <Arduino.h>  // String, Serial, F()
-#include <Adafruit_SSD1306.h>  // for the shared `display` object
-
-// The `display` object is defined in TamAIgotchi.ino (the sketch entry
-// point); reference it here instead of passing it through every call.
-extern Adafruit_SSD1306 display;
-
-void combinedOutput(int x, int y, char* line, bool clrscr) {
-  if(clrscr) {
-    display.clearDisplay();
-  }
-  Serial.println(line);
-  display.setCursor(x, y);
-  display.println(line);
-  display.display();
-}
 
 // Word-wrap text into fixed-width lines (issue #13): one word per line
 // boundary, words longer than the line width are hard-broken, existing
@@ -69,4 +54,3 @@ int wrapText(const String& text, char* out[], int width, int maxLines) {
   flushLine();
   return count;
 }
-
