@@ -30,7 +30,15 @@ void renderScreen() {
   display.clearDisplay();
   statusShow();          // redraw the status bar's two lines (no panel push)
   alien.drawSprite();    // stand frame / current animation frame (always)
-  bubbleRender();        // rectangle + tail + visible window
+  // Bubble: while the idle animation runs, the animation owns the bubble
+  // content (bubbleRenderText() - the line table is untouched, so the
+  // response survives the animation, issue #35 step 5 follow-up, Q4);
+  // otherwise the stored table window is drawn as usual.
+  if (alien.state() == ANIM_ACTIVE) {
+    alien.renderBubble();
+  } else {
+    bubbleRender();
+  }
   display.display();
 }
 

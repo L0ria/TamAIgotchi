@@ -6,7 +6,7 @@
 #include <Arduino.h>  // millis(), Serial, F()
 #include <Adafruit_SSD1306.h>  // for the shared `display` object
 #include <ESPWifiConfig.h>     // for the shared `wifiConfig` object (canAnimate)
-#include "bubble.h"     // bubbleSetText() / bubbleClear() (issue #35, step 5)
+#include "bubble.h"     // bubbleRenderText() (issue #35, step 5 follow-up)
 #include "display.h"    // renderScreen() (issue #35, step 5: the single pass)
 
 // Shared objects + state declared in TamAIgotchi.ino (the sketch entry
@@ -52,22 +52,28 @@ void AlienAnimation::drawSprite() {
   renderAlien(frame, 4, 42);
 }
 
-// Render the current animation scene (issue #35, step 5 of 6 of the UI
-// restructure in #29): the animation no longer draws its own frame - it
-// only sets the bubble content (the sprite frame is already tracked in
-// alienFrame and drawn by drawSprite()), then pushes one full frame through
-// the single render pass renderScreen().
-//   bubble phases (0 / 2): the LARGE bubble shows ALIEN_BUBBLE_TEXT (issue
-//                          #29 Q8: the bubble is always the same size - no
-//                          small bubble, no popping rectangle) + stand frame
-//   wave phases  (1 / 3):  the bubble is empty + the jumping/waving frame
-//   stand phase  (4):      the bubble is empty + stand frame
-void AlienAnimation::renderAlienScene() {
+// Draw the animation's bubble content into the current frame WITHOUT
+// touching the bubble's line table (issue #35 step 5 follow-up, Q4: the
+// stored response text must survive the animation): the bubble phases
+// (0 / 2) show ALIEN_BUBBLE_TEXT (issue #29 Q8: the bubble is always the
+// same size - no small bubble, no popping rectangle), the wave phases
+// (1 / 3) and the stand phase (4) show an empty bubble. Called by
+// renderScreen() (display.cpp) while the animation is running.
+void AlienAnimation::renderBubble() {
   if (alienPhase == 0 || alienPhase == 2) {
-    bubbleSetText(ALIEN_BUBBLE_TEXT);
+    bubbleRenderText(ALIEN_BUBBLE_TEXT);
   } else {
-    bubbleClear();
+    bubbleRenderText(NULL);
   }
+}
+
+// Render the current animation scene (issue #35, step 5 of 6 of the UI
+// restructure in #29): the animation no longer draws its own frame and no
+// longer touches the bubble's line table - it only pushes one full frame
+// through the single render pass renderScreen() (the sprite frame is drawn
+// by drawSprite(), the bubble content by renderBubble(), both from
+// renderScreen()).
+void AlienAnimation::renderAlienScene() {
   renderScreen();
 }
 

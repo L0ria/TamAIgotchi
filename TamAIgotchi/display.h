@@ -57,7 +57,9 @@ bool startRecording();
 //      content)
 //   2. the alien sprite (always present: the stand frame when the idle
 //      animation is not running, the current animation frame while it is)
-//   3. the speech bubble (rectangle + tail + visible window)
+//   3. the speech bubble (rectangle + tail + visible window; while the
+//      idle animation runs, the animation's bubble content instead -
+//      drawn without touching the line table, so the response survives)
 // Every state change (status line, bubble text, animation phase, scroll)
 // ends in this one call - never clearDisplay()/display() directly, so the
 // three regions can never be drawn in different frames (flicker /

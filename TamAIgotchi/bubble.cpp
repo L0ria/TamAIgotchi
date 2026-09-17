@@ -64,11 +64,14 @@ void bubbleJumpTo(bool toEnd) {
   }
 }
 
-// Draw the bubble rectangle (always, even when empty) + the tail triangle
-// + the visible BUBBLE_VISIBLE_LINES window of the table into the current
-// frame. No clearDisplay() / display() of its own (the single render pass
-// arrives in step 5; the caller issues display.display()).
-void bubbleRender() {
+// Draw the bubble frame (rectangle + interior clear + tail) + up to
+// BUBBLE_VISIBLE_LINES lines of `lines[]` (the first `count` are valid)
+// into the current frame. Shared by bubbleRender() (the stored table
+// window) and bubbleRenderText() (a transient text, table untouched).
+// Text is padded 3 px in from the left edge and starts 3 px below the top
+// edge (font 1 = 6x8 px/char).
+template <typename LineBuf>
+static void bubbleDrawFrame(LineBuf lines, int count) {
   // The bubble rectangle - always the same size, always drawn (issue #29 Q8).
   display.drawRect(BUBBLE_X, BUBBLE_Y, BUBBLE_W, BUBBLE_H, WHITE);
 
@@ -85,19 +88,44 @@ void bubbleRender() {
                        BUBBLE_X,     BUBBLE_Y + 22,   // base bottom (30, 40)
                        WHITE);
 
+  if (count > BUBBLE_VISIBLE_LINES) count = BUBBLE_VISIBLE_LINES;
+  for (int i = 0; i < count; i++) {
+    display.setCursor(BUBBLE_X + 3, BUBBLE_Y + 3 + 8 * i);
+    display.print(lines[i]);
+  }
+}
+
+// Draw the bubble rectangle (always, even when empty) + the tail triangle
+// + the visible BUBBLE_VISIBLE_LINES window of the table into the current
+// frame. No clearDisplay() / display() of its own (the single render pass
+// arrives in step 5; the caller issues display.display()).
+void bubbleRender() {
   // The visible window of the table (BUBBLE_VISIBLE_LINES lines), starting
-  // at bubbleScrollOffset. Text is padded 3 px in from the left edge and
-  // starts 3 px below the top edge (font 1 = 6x8 px/char).
+  // at bubbleScrollOffset.
   int maxOffset = (bubbleCount > BUBBLE_VISIBLE_LINES)
                 ? bubbleCount - BUBBLE_VISIBLE_LINES
                 : 0;
   if (bubbleOffset < 0) bubbleOffset = 0;
   if (bubbleOffset > maxOffset) bubbleOffset = maxOffset;
 
-  for (int i = 0; i < BUBBLE_VISIBLE_LINES; i++) {
-    int idx = bubbleOffset + i;
-    if (idx >= bubbleCount) break;
-    display.setCursor(BUBBLE_X + 3, BUBBLE_Y + 3 + 8 * i);
-    display.print(bubbleLines[idx]);
+  bubbleDrawFrame(&bubbleLines[0], bubbleCount - bubbleOffset);
+}
+
+// Draw the bubble frame + up to BUBBLE_VISIBLE_LINES lines of `text`
+// (word-wrapped at BUBBLE_CHARS_PER_LINE, first lines shown) into the
+// current frame WITHOUT touching the line table (bubbleLines /
+// bubbleCount / bubbleOffset) - the stored content (e.g. the response)
+// survives the call (issue #35 step 5 follow-up, Q4: the idle animation
+// must not destroy the response text). text = NULL draws an empty bubble.
+// No clearDisplay() / display() of its own (see the header note).
+void bubbleRenderText(const char* text) {
+  if (text == NULL) {
+    bubbleDrawFrame(&bubbleLines[0], 0);  // valid pointer, zero lines
+    return;
   }
+  char lines[BUBBLE_VISIBLE_LINES][BUBBLE_CHARS_PER_LINE + 1];
+  char* out[BUBBLE_VISIBLE_LINES];
+  for (int i = 0; i < BUBBLE_VISIBLE_LINES; i++) out[i] = lines[i];
+  int count = wrapText(String(text), out, BUBBLE_CHARS_PER_LINE, BUBBLE_VISIBLE_LINES);
+  bubbleDrawFrame(&lines[0], count);
 }
