@@ -1,1 +1,4 @@
 TamAIgotchi/config.h_
+
+# Host test build output (tests/run_tests.sh, issue #44)
+tests/build/

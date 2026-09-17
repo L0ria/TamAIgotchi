@@ -1,0 +1,172 @@
+// Host-side Arduino API shim for the unit tests (issue #44, step 1 of 11
+// of the refactoring plan in #42).
+//
+// The firmware modules under test do `#include <Arduino.h>`; on the host
+// build this file provides just enough of the Arduino API for them to
+// compile and run under g++ (no ESP32 toolchain):
+//
+//   - String   (small class over std::string)
+//   - millis() (deterministic: tests drive it via host_set_millis())
+//   - digitalRead() / digitalWrite() (backed by the host_pin_level[] table)
+//   - Serial   (print/println -> stdout AND a capture buffer tests can assert on)
+//   - F(x), HIGH, LOW, PROGMEM
+//
+// It is deliberately NOT a general Arduino emulation: only what the modules
+// listed in run_tests.sh actually use is provided. Later steps (2-10) add
+// shims for the other libraries they need (ESPWifiConfig.h, OpenAI.h,
+// ESP_I2S.h, WiFi.h, ...) to tests/shims/.
+//
+// NOTE: the file must stay named `Arduino.h` with a capital A - the modules
+// include it as <Arduino.h> and Linux is case-sensitive.
+#pragma once
+
+#include <cstddef>
+#include <cstdio>
+#include <cstring>
+#include <string>
+
+// ---------------------------------------------------------------------------
+// Constants + string literal macro
+// ---------------------------------------------------------------------------
+#define HIGH 1
+#define LOW  0
+#define PROGMEM
+#define F(x) x
+
+// ---------------------------------------------------------------------------
+// Deterministic time: millis() reads host_now_ms; tests advance it with
+// host_set_millis() so the Button debounce / long-press logic is testable.
+// (Defined in tests/test_main.cpp, the harness translation unit.)
+// ---------------------------------------------------------------------------
+extern unsigned long host_now_ms;
+inline unsigned long millis() { return host_now_ms; }
+inline void host_set_millis(unsigned long ms) { host_now_ms = ms; }
+
+// ---------------------------------------------------------------------------
+// Deterministic GPIO: digitalRead() / digitalWrite() read/write a pin table
+// that defaults to HIGH (released / pull-up). Tests drive a pin with
+// host_set_pin(). (Defined in tests/test_main.cpp.)
+// ---------------------------------------------------------------------------
+extern int host_pin_level[64];
+inline int digitalRead(int pin) {
+  return (pin >= 0 && pin < 64) ? host_pin_level[pin] : HIGH;
+}
+inline void digitalWrite(int pin, int level) {
+  if (pin >= 0 && pin < 64) host_pin_level[pin] = level;
+}
+inline void pinMode(int pin, int mode) { (void)pin; (void)mode; }  // no-op on host
+// Test hook: drive a pin to a level (defined in tests/test_main.cpp).
+void host_set_pin(int pin, int level);
+
+// ---------------------------------------------------------------------------
+// String: the subset of the Arduino String API the firmware modules use.
+// Arduino semantics kept where they differ from std::string, notably
+// substring(from, to) where `to` is INCLUSIVE.
+// ---------------------------------------------------------------------------
+class String {
+ public:
+  String() = default;
+  String(const char* s) : s_(s ? s : "") {}
+  String(const String&) = default;
+  String& operator=(const String&) = default;
+  String& operator=(const char* s) { s_ = s ? s : ""; return *this; }
+
+  bool empty() const { return s_.empty(); }
+  size_t length() const { return s_.size(); }
+  char charAt(size_t i) const { return (i < s_.size()) ? s_[i] : '\0'; }
+  const char* c_str() const { return s_.c_str(); }
+
+  // Arduino: substring(from, to) - `to` is inclusive (and clamped).
+  String substring(size_t from, size_t to) const {
+    if (from >= s_.size()) return String();
+    size_t last = (to >= s_.size()) ? s_.size() - 1 : to;
+    if (last < from) return String();
+    return String(s_.substr(from, last - from + 1).c_str());
+  }
+
+  // Arduino: toCharArray(buf, len) copies at most len-1 chars + NUL.
+  void toCharArray(char* buf, size_t len) const {
+    if (!buf || len == 0) return;
+    size_t n = (s_.size() < len - 1) ? s_.size() : len - 1;
+    s_.copy(buf, n, 0);
+    buf[n] = '\0';
+  }
+
+  String& operator+=(char c) { s_ += c; return *this; }
+  String& operator+=(const char* s) { if (s) s_ += s; return *this; }
+  String& operator+=(const String& s) { s_ += s.s_; return *this; }
+
+  String operator+(const String& o) const { return String((s_ + o.s_).c_str()); }
+  String operator+(const char* o) const { return String((s_ + (o ? o : "")).c_str()); }
+  String operator+(char o) const { std::string r = s_; r += o; return String(r.c_str()); }
+
+  String trim() const {
+    size_t b = s_.find_first_not_of(" \t\r\n");
+    if (b == std::string::npos) return String();
+    size_t e = s_.find_last_not_of(" \t\r\n");
+    return String(s_.substr(b, e - b + 1).c_str());
+  }
+
+  String& replace(const String& target, const String& replacement) {
+    if (target.empty()) return *this;
+    std::string out;
+    size_t offset = 0;
+    while (offset < s_.size()) {
+      size_t pos = s_.find(target.s_, offset);
+      if (pos == std::string::npos) { out += s_.substr(offset); break; }
+      out.append(s_, offset, pos - offset);
+      out += replacement.s_;
+      offset = pos + target.s_.size();
+    }
+    s_ = out;
+    return *this;
+  }
+  String& replace(const char* target, const char* replacement) {
+    return replace(String(target), String(replacement));
+  }
+
+  bool equals(const String& o) const { return s_ == o.s_; }
+  bool equals(const char* o) const { return s_ == (o ? o : ""); }
+  bool operator==(const String& o) const { return s_ == o.s_; }
+  bool operator==(const char* o) const { return s_ == (o ? o : ""); }
+  bool operator!=(const String& o) const { return !(*this == o); }
+  bool operator!=(const char* o) const { return !(*this == o); }
+
+ private:
+  std::string s_;
+};
+
+// ---------------------------------------------------------------------------
+// Serial: print/println go to stdout (so a human running the tests sees the
+// same trace as the firmware) AND into a capture buffer tests can assert on.
+// (Defined in tests/test_main.cpp.)
+// ---------------------------------------------------------------------------
+class SerialClass {
+ public:
+  void begin(unsigned long baud) { (void)baud; }
+  void end() {}
+
+  size_t print(const char* s) { return write(s ? s : ""); }
+  size_t print(const String& s) { return write(s.c_str()); }
+  size_t print(char c) { return write(std::string(1, c)); }
+  size_t print(unsigned long v) { char b[24]; std::snprintf(b, sizeof b, "%lu", v); return write(b); }
+
+  size_t println() { return write("\n"); }
+  size_t println(const char* s) { return print(s) + 1; }
+  size_t println(const String& s) { return print(s) + 1; }
+  size_t println(char c) { return print(c) + 1; }
+  size_t println(unsigned long v) { char b[24]; std::snprintf(b, sizeof b, "%lu", v); return write(b) + 1; }
+
+  // Test hooks
+  void clearCapture() { captured_.clear(); }
+  const std::string& captured() const { return captured_; }
+
+ private:
+  size_t write(const std::string& s) {
+    captured_ += s;
+    std::fputs(s.c_str(), stdout);
+    return s.size();
+  }
+  std::string captured_;
+};
+extern SerialClass Serial;
