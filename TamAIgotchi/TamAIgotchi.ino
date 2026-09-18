@@ -23,6 +23,7 @@
 #include "statusbar.h"  // statusBar (issue #46, step 3)
 #include "messages.h"   // MSG_* user-facing display strings (issue #36, step 6)
 #include "bubble.h"     // bubble (scroll / jump / render, issue #34, step 4)
+#include "led.h"      // led (recording LED, issue #47, step 4)
 
 // State machine (issue #9 + issue #13):
 //   IDLE      - waiting for a debounced button press
@@ -72,6 +73,12 @@ Bubble bubble;
 // instance lives in the sketch, the modules reference it via the extern
 // in statusbar.h).
 StatusBar statusBar;
+
+// Recording LED (step 4 of 11 of the refactoring in #42, issue #47): the
+// shared LED object (same shared-object pattern as `bubble` / `statusBar`
+// - the instance lives in the sketch, the modules reference it via the
+// extern in led.h).
+Led led(LED_PIN);
 
 void setup() {
   Serial.begin(115200);
@@ -227,7 +234,7 @@ void loop() {
     }
 
     // Recording finished: hand over to the send flow.
-    digitalWrite(LED_PIN, LOW);
+    led.off();  // recording LED (issue #47, step 4)
     D_TD(F("recorded "));
     D_TDDEC(recorder.rec_pos);
     D_TDLN(F(" bytes of PCM"));

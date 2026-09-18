@@ -35,6 +35,12 @@ Adafruit_SSD1306 display;  // defaults 128x64; the fake ignores the HW args
 #include "statusbar.h"
 StatusBar statusBar;
 
+// The shared recording-LED object (TamAIgotchi.ino on the device; the
+// host build defines it here so led.cpp's `extern Led led;` links) -
+// the same pattern as the shared `statusBar` object.
+#include "led.h"
+Led led(LED_PIN);
+
 // Host stub for the single render pass (display.cpp, step 8 of 11): the
 // modules' show()/clear() call it; the host build has no display.cpp, so
 // it is a no-op here (the tests assert on the stored state + the SSD1306
