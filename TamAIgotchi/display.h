@@ -53,8 +53,8 @@ bool startRecording();
 // THE single render pass (issue #35, step 5 of 6 of the UI restructure in
 // #29): exactly one clearDisplay() + one display() per frame, composing the
 // three regions in a fixed order:
-//   1. the status bar (its two lines, drawn by statusShow() from its stored
-//      content)
+//   1. the status bar (its two lines, drawn by statusBar.draw() from its
+//      stored content)
 //   2. the alien sprite (always present: the stand frame when the idle
 //      animation is not running, the current animation frame while it is)
 //   3. the speech bubble (rectangle + tail + visible window; while the

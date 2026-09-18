@@ -25,6 +25,7 @@ MODULES=(
   TamAIgotchi/text_utils.cpp
   TamAIgotchi/buttons.cpp
   TamAIgotchi/bubble.cpp
+  TamAIgotchi/statusbar.cpp
 )
 
 # Test files (one per module, plus the harness).
@@ -33,6 +34,7 @@ TESTS=(
   tests/test_text_utils.cpp
   tests/test_buttons.cpp
   tests/test_bubble.cpp
+  tests/test_statusbar.cpp
 )
 
 echo "[run_tests] compiling: ${MODULES[*]}"

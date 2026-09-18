@@ -12,15 +12,15 @@
 //   buttons.h    - the debounced buttons (step 2)
 //   text_utils.h - wrapText() (step 1; the display-role helpers were
 //                  removed during the UI restructure in #29, issues #33/#36)
-//   statusbar.h  - statusShow() / statusError() / statusClear() (step 2,
-//                  issue #32: the top two lines are the status bar)
+//   statusbar.h  - statusBar (show / error / clear / draw, step 3,
+//                  issue #46: the top two lines are the status bar)
 #include "hardware.h"   // shared hardware objects + hardwareInit()
 #include "display.h"    // showWifiStatus() / resetWifiSettingsAndRestart() /
                         // startRecording()
 #include "buttons.h"    // Button instances
 #include "recorder.h"   // Recorder + RecState
 #include "alien.h"      // AlienAnimation
-#include "statusbar.h"  // statusShow() / statusError() (issue #32, step 2)
+#include "statusbar.h"  // statusBar (issue #46, step 3)
 #include "messages.h"   // MSG_* user-facing display strings (issue #36, step 6)
 #include "bubble.h"     // bubble (scroll / jump / render, issue #34, step 4)
 
@@ -67,6 +67,12 @@ AlienAnimation alien;
 // extern in bubble.h, same as `display`).
 Bubble bubble;
 
+// Status bar (step 3 of 11 of the refactoring in #42, issue #46): the
+// shared status-bar object (same shared-object pattern as `bubble` - the
+// instance lives in the sketch, the modules reference it via the extern
+// in statusbar.h).
+StatusBar statusBar;
+
 void setup() {
   Serial.begin(115200);
   D_TDLN(F("setup() start"));
@@ -87,7 +93,7 @@ void setup() {
   D_TDLN(F("LocalAI settings registered (LOCALAI_URL, LOCALAI_KEY)"));
 
 /* connect to WiFi (or start the setup access point) */
-  statusShow(MSG_WIFI_CONNECTING);
+  statusBar.show(MSG_WIFI_CONNECTING);
   if (wifiConfig.initialize() == AP_MODE) {
     // No known network was reachable: the device is broadcasting an access
     // point. Keep the setup web server running so the WiFi can be configured.
@@ -198,7 +204,7 @@ void loop() {
     static unsigned long recSecondsShown = 0;
     if (recSeconds != recSecondsShown) {
       recSecondsShown = recSeconds;
-      statusShow(MSG_RECORDING, String(recSeconds) + " s");
+      statusBar.show(MSG_RECORDING, String(recSeconds) + " s");
     }
 
     // Stop conditions (checked after every chunk):
@@ -252,7 +258,7 @@ void loop() {
     // it - Q4).
     auto renderResponse = []() {
       renderScreen();
-      statusShow(MSG_RESPONSE_PREFIX + String(bubble.scrollOffset() + 1) + "/"
+      statusBar.show(MSG_RESPONSE_PREFIX + String(bubble.scrollOffset() + 1) + "/"
                  + String(bubble.lineCount()));
     };
 

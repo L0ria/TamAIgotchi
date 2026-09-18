@@ -76,12 +76,14 @@ class String {
   char charAt(size_t i) const { return (i < s_.size()) ? s_[i] : '\0'; }
   const char* c_str() const { return s_.c_str(); }
 
-  // Arduino: substring(from, to) - `to` is inclusive (and clamped).
+  // Arduino: substring(from, to) - `to` is EXCLUSIVE (the ESP32 core
+  // copies `to - from` chars: WString.cpp substring() -> copy(left,
+  // right - left)), clamped to the string length.
   String substring(size_t from, size_t to) const {
     if (from >= s_.size()) return String();
-    size_t last = (to >= s_.size()) ? s_.size() - 1 : to;
-    if (last < from) return String();
-    return String(s_.substr(from, last - from + 1).c_str());
+    size_t last = (to > s_.size()) ? s_.size() : to;
+    if (last <= from) return String();
+    return String(s_.substr(from, last - from).c_str());
   }
 
   // Arduino: toCharArray(buf, len) copies at most len-1 chars + NUL.
@@ -152,10 +154,10 @@ class SerialClass {
   size_t print(unsigned long v) { char b[24]; std::snprintf(b, sizeof b, "%lu", v); return write(b); }
 
   size_t println() { return write("\n"); }
-  size_t println(const char* s) { return print(s) + 1; }
-  size_t println(const String& s) { return print(s) + 1; }
-  size_t println(char c) { return print(c) + 1; }
-  size_t println(unsigned long v) { char b[24]; std::snprintf(b, sizeof b, "%lu", v); return write(b) + 1; }
+  size_t println(const char* s) { return print(s) + write("\n"); }
+  size_t println(const String& s) { return print(s) + write("\n"); }
+  size_t println(char c) { return print(c) + write("\n"); }
+  size_t println(unsigned long v) { char b[24]; std::snprintf(b, sizeof b, "%lu", v); return write(b) + write("\n"); }
 
   // Test hooks
   void clearCapture() { captured_.clear(); }

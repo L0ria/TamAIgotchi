@@ -29,6 +29,18 @@ SerialClass Serial;
 // defines it here so the modules' `extern Adafruit_SSD1306 display;` links).
 Adafruit_SSD1306 display;  // defaults 128x64; the fake ignores the HW args
 
+// The shared status-bar object (TamAIgotchi.ino on the device; the host
+// build defines it here so statusbar.cpp's `extern StatusBar statusBar;`
+// links) - the same pattern as the shared `display` object.
+#include "statusbar.h"
+StatusBar statusBar;
+
+// Host stub for the single render pass (display.cpp, step 8 of 11): the
+// modules' show()/clear() call it; the host build has no display.cpp, so
+// it is a no-op here (the tests assert on the stored state + the SSD1306
+// shim's recorded draw calls, not on the frame push).
+void renderScreen() {}
+
 void host_set_pin(int pin, int level) {
   if (pin >= 0 && pin < 64) host_pin_level[pin] = level;
 }
