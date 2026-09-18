@@ -24,6 +24,8 @@
 unsigned long host_now_ms = 0;
 int host_pin_level[64];
 SerialClass Serial;
+size_t host_free_heap_bytes = 0;   // esp_get_free_heap_size() (Arduino.h shim)
+size_t host_heap_free_bytes = 0;   // heap_caps_get_free_size() (esp_heap_caps.h shim)
 
 // The shared display object (hardware.h on the device; the host build
 // defines it here so the modules' `extern Adafruit_SSD1306 display;` links).
@@ -40,6 +42,37 @@ StatusBar statusBar;
 // the same pattern as the shared `statusBar` object.
 #include "led.h"
 Led led(LED_PIN);
+
+// The shared recorder object (TamAIgotchi.ino on the device; the host
+// build defines it here so recorder.cpp's `extern Recorder recorder;`
+// links) - the same pattern as the shared `statusBar` / `led` objects.
+#include "recorder.h"
+Recorder recorder;
+
+// The app state machine (TamAIgotchi.ino on the device; the host build
+// defines it here so recorder.cpp's `extern RecState recState;` links).
+// Starts at IDLE.
+RecState recState = IDLE;
+
+// The OpenAI clients + the shared alien object (TamAIgotchi.ino on the
+// device; the host build defines them here so recorder.cpp's externs link).
+// The network behavior is NOT emulated (see the OpenAI.h shim) - the tests
+// exercise the buffer/streaming API, not the SENDING/RESPONSE flow.
+#include <OpenAI.h>
+OpenAI openai;
+OpenAI_ChatCompletion chat(openai);
+OpenAI_AudioTranscription audio(openai);
+
+#include "alien.h"
+AlienAnimation alien;
+
+// The shared WiFi-config object (hardware.h on the device; the host build
+// defines it here so alien.cpp's `extern ESPWifiConfig wifiConfig;` links).
+#include <ESPWifiConfig.h>
+ESPWifiConfig wifiConfig("TamAIgotchi", 8080, -1, false, "", "", true);
+
+// The ESP object (Arduino.h shim) - defined here so the extern links.
+EspClass ESP;
 
 // Host stub for the single render pass (display.cpp, step 8 of 11): the
 // modules' show()/clear() call it; the host build has no display.cpp, so

@@ -23,6 +23,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
+#include <cstdarg>
 #include <string>
 
 // ---------------------------------------------------------------------------
@@ -68,13 +69,28 @@ class String {
   String() = default;
   String(const char* s) : s_(s ? s : "") {}
   String(const String&) = default;
+  // Arduino: String(int) / String(unsigned) / String(size_t) - the decimal
+  // representation (used by String(bubble.lineCount()), String(recSeconds),
+  // String(result.tokens()), ...).
+  String(int v) { s_ = std::to_string(v); }
+  String(unsigned v) { s_ = std::to_string(v); }
+  String(long v) { s_ = std::to_string(v); }
+  String(unsigned long v) { s_ = std::to_string(v); }  // covers size_t on 64-bit
   String& operator=(const String&) = default;
   String& operator=(const char* s) { s_ = s ? s : ""; return *this; }
 
   bool empty() const { return s_.empty(); }
   size_t length() const { return s_.size(); }
   char charAt(size_t i) const { return (i < s_.size()) ? s_[i] : '\0'; }
+  // Arduino: String::getAt(i) - the single char at index i (empty past end).
+  String getAt(size_t i) const {
+    if (i >= s_.size()) return String();
+    char c = s_[i];
+    return String(&c);
+  }
   const char* c_str() const { return s_.c_str(); }
+  // Arduino: String::toString() - a copy of this string.
+  String toString() const { return *this; }
 
   // Arduino: substring(from, to) - `to` is EXCLUSIVE (the ESP32 core
   // copies `to - from` chars: WString.cpp substring() -> copy(left,
@@ -159,6 +175,18 @@ class SerialClass {
   size_t println(char c) { return print(c) + write("\n"); }
   size_t println(unsigned long v) { char b[24]; std::snprintf(b, sizeof b, "%lu", v); return write(b) + write("\n"); }
 
+  // printf: format + (up to 3) args, mirrored to the capture buffer. The
+  // firmware uses it for the token-count log line.
+  size_t printf(const char* fmt, ...) {
+    char b[128];
+    va_list ap;
+    va_start(ap, fmt);
+    int n = std::vsnprintf(b, sizeof b, fmt, ap);
+    va_end(ap);
+    if (n < 0) return 0;
+    return write(n < (int)sizeof b ? b : "");
+  }
+
   // Test hooks
   void clearCapture() { captured_.clear(); }
   const std::string& captured() const { return captured_; }
@@ -171,4 +199,29 @@ class SerialClass {
   }
   std::string captured_;
 };
+// Free operator+ for (const char* + String): the "Response 1/" counter builds
+// a string-literal + String(n). (String + const char* is a member.)
+inline String operator+(const char* a, const String& b) {
+  return String((std::string(a ? a : "") + b.c_str()).c_str());
+}
+
 extern SerialClass Serial;
+
+// ---------------------------------------------------------------------------
+// ESP: the subset recorder.cpp / display.cpp use (esp_get_free_heap_size in
+// the PSRAM-less fallback of initRecBuffer(), ESP.restart() in the reset
+// escape hatch). host_set_free_heap() drives the reported free heap.
+// (Defined in tests/test_main.cpp.)
+// ---------------------------------------------------------------------------
+extern size_t host_free_heap_bytes;
+inline void host_set_free_heap(size_t bytes) { host_free_heap_bytes = bytes; }
+inline size_t esp_get_free_heap_size() { return host_free_heap_bytes; }
+
+class EspClass {
+ public:
+  void restart() { restarted_++; }
+  int restarted() const { return restarted_; }  // test hook
+ private:
+  int restarted_ = 0;
+};
+extern EspClass ESP;
