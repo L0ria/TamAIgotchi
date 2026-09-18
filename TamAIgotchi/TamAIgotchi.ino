@@ -216,7 +216,7 @@ void loop() {
 
     // Stop conditions (checked after every chunk):
     bool stop = false;
-    if (digitalRead(BUTTON_PIN) != LOW) {
+    if (!mainBtn.isHeld()) {
       D_TDLN(F("button released - stopping recording"));
       stop = true;
     } else if (recorder.rec_pos >= recorder.rec_buf_bytes) {

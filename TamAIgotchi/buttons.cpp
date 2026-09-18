@@ -26,12 +26,13 @@ void Button::update() {
   }
 }
 
-// Debounced press: true once the button has been stably LOW for
-// BUTTON_DEBOUNCE_MS (i.e. after the press edge settles), and only for the
-// first loop() pass of that press (one action per press).
+// Debounced press: true once the button has been stably LOW for at least
+// BUTTON_DEBOUNCE_MS (a press at exactly the threshold fires - the >= is
+// consistent with isLongPressed(), step 5 / #48 finding #5), and only for
+// the first loop() pass of that press (one action per press).
 bool Button::isPressed() {
   if (acted) return false;
-  if ((lastState == LOW) && (millis() - pressStart) > BUTTON_DEBOUNCE_MS) {
+  if ((lastState == LOW) && (millis() - pressStart) >= BUTTON_DEBOUNCE_MS) {
     acted = true;
     return true;
   }
@@ -53,6 +54,13 @@ bool Button::isLongPressed() {
   }
   return false;
 }
+
+// Is the button currently held? True while the (debounced) level is LOW.
+// Unlike isPressed() / isLongPressed() this is NOT one-shot and is NOT
+// guarded by the acted/longFired flags - it tracks the raw debounced level
+// so the RECORDING branch (TamAIgotchi.ino) can stop on release without a
+// second raw digitalRead(BUTTON_PIN) path (step 5, #48, finding #2).
+bool Button::isHeld() const { return lastState == LOW; }
 
 // Re-arm the debounce: forget the current press so the next one acts.
 // (Mirrors the old `mainBtn.lastState = HIGH; mainBtn.acted = false;`
