@@ -3,19 +3,17 @@
 #include "alien.h"
 #include "config.h"   // ALIEN_* timings
 #include "messages.h" // MSG_ALIEN_BUBBLE (idle bubble text, issue #36, step 6)
-#include "recorder.h" // Recorder (rec_buf + recState)
 #include <Arduino.h>  // millis(), Serial, F()
 #include <Adafruit_SSD1306.h>  // for the shared `display` object
-#include <ESPWifiConfig.h>     // for the shared `wifiConfig` object (canAnimate)
 #include "bubble.h"     // bubble.renderText() (issue #35, step 5 follow-up)
 #include "display.h"    // renderScreen() (issue #35, step 5: the single pass)
 
-// Shared objects + state declared in TamAIgotchi.ino (the sketch entry
-// point); referenced here instead of passed through every call.
+// Shared object declared in hardware.h (the sketch's hardware init);
+// referenced here instead of passed through every call. (issue #50, step 7
+// of 11 of the refactoring plan in #42: the recorder / RecState /
+// ESPWifiConfig externs are gone - canAnimate() and update() take their
+// inputs as parameters.)
 extern Adafruit_SSD1306 display;
-extern ESPWifiConfig wifiConfig;
-extern Recorder recorder;      // recorder.bufferAllocated() (canAnimate, issue #49)
-extern RecState recState;     // app state (response timeout in update)
 
 // Any button press is activity: it stops the animation and restarts the
 // inactivity timers (both the idle start and the response auto-return).
@@ -27,12 +25,12 @@ void AlienAnimation::markActivity() {
   }
 }
 
-// The animation only runs while the device is fully usable: STA mode,
-// connected, and the recording buffer allocated (see issue #16 answers).
-bool AlienAnimation::canAnimate() const {
-  return recorder.bufferAllocated() &&
-         (wifiConfig.ESP_mode != AP_MODE) &&
-         wifiConfig.wifi_connected;
+// The animation only runs while the device is fully usable: the recording
+// buffer allocated (bufferOk) AND the WiFi link up (wifiOk) - STA mode +
+// connected (see issue #16 answers). The caller computes the two booleans
+// (issue #50, step 7 of 11 of the refactoring plan in #42).
+bool AlienAnimation::canAnimate(bool bufferOk, bool wifiOk) const {
+  return bufferOk && wifiOk;
 }
 
 // Draw one alien sprite at (x, y) using the Adafruit_GFX 1-bit format
@@ -92,10 +90,14 @@ void AlienAnimation::start() {
 // of the response being shown (RESPONSE state); any button press (markActivity)
 // stops it. Then advances the 70 s loop (bubble / wave / stand phases),
 // swapping the sprite frame every ALIEN_FRAME_MS during the wave phases.
-void AlienAnimation::update() {
-  if (canAnimate() && alienState == ANIM_IDLE) {
+// inResponse = true when the app is in the RESPONSE state (use
+// ALIEN_RESPONSE_TIMEOUT_MS), false otherwise (use ALIEN_IDLE_TIMEOUT_MS) -
+// the caller passes recState == RESPONSE (issue #50, step 7 of 11 of the
+// refactoring plan in #42).
+void AlienAnimation::update(bool inResponse, bool bufferOk, bool wifiOk) {
+  if (canAnimate(bufferOk, wifiOk) && alienState == ANIM_IDLE) {
     unsigned long now = millis();
-    unsigned long timeout = (recState == RESPONSE)
+    unsigned long timeout = inResponse
                           ? ALIEN_RESPONSE_TIMEOUT_MS
                           : ALIEN_IDLE_TIMEOUT_MS;
     if ((now - alienActivityMs) >= timeout) {

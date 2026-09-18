@@ -65,9 +65,10 @@ static const uint8_t* const alienFrameData[4] = {
 //   alien.update()        - once per loop() pass (starts on idle timeout +
 //                           advances the 70 s loop)
 //
-// The shared `display` object + the recorder (for canAnimate(): the
-// recording buffer + the app state, for the response timeout) are
-// referenced via extern (see alien.cpp).
+// The shared `display` object is referenced via extern (see alien.cpp).
+// canAnimate() and update() take their inputs as parameters (issue #50,
+// step 7 of 11 of the refactoring plan in #42) - the alien no longer
+// knows about the recorder or the WiFi library.
 // ---------------------------------------------------------------------------
 
 // Animation state (moved here from TamAIgotchi.ino).
@@ -79,19 +80,40 @@ class AlienAnimation {
   // inactivity timers (both the idle start and the response auto-return).
   void markActivity();
 
-  // The animation only runs while the device is fully usable: STA mode,
-  // connected, and the recording buffer allocated (see issue #16 answers).
-  bool canAnimate() const;
+  // The animation only runs while the device is fully usable: the recording
+  // buffer allocated (bufferOk) AND the WiFi link up (wifiOk) - STA mode +
+  // connected (see issue #16 answers). Pure predicate - the caller computes
+  // the two booleans (issue #50, step 7 of 11 of the refactoring plan in
+  // #42: the alien no longer knows about the recorder or the WiFi library).
+  // Public so the host tests can assert it in isolation; the firmware's only
+  // caller is update().
+  bool canAnimate(bool bufferOk, bool wifiOk) const;
 
   // Starts the animation (call when the idle timeout elapses).
   void start();
 
   // Advance the 70 s loop (bubble / wave / stand phases) + swap the sprite
   // frame during the wave phases. Call once per loop() pass.
-  void update();
+  //   inResponse = true when the app is in the RESPONSE state (use
+  //                ALIEN_RESPONSE_TIMEOUT_MS for the idle start), false
+  //                otherwise (use ALIEN_IDLE_TIMEOUT_MS) - the caller passes
+  //                recState == RESPONSE.
+  //   bufferOk / wifiOk = the device-usable predicate inputs - the caller
+  //                computes them (recorder buffer allocated; WiFi in STA mode
+  //                + connected) and passes them in. update() feeds them to
+  //                canAnimate() to gate the IDLE -> ACTIVE start only (the
+  //                advance runs once active, as before). (issue #50, step 7
+  //                of 11 of the refactoring plan in #42: the alien no longer
+  //                reads the app state / recorder / WiFi library via extern.)
+  void update(bool inResponse, bool bufferOk, bool wifiOk);
 
   // The current animation state (ANIM_IDLE / ANIM_ACTIVE).
   AlienState state() const { return alienState; }
+
+  // The current animation phase (0=bubble, 1=wave, 2=bubble, 3=wave,
+  // 4=stand) - exposed for the host tests (issue #50, step 7 of 11) to assert
+  // the 70 s phase progression; the firmware never reads it.
+  int phase() const { return alienPhase; }
 
   // Draw the alien sprite at its anchor (x 4..27, y 42..63) into the current
   // frame: the stand frame when the animation is not running, the current

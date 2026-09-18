@@ -66,11 +66,6 @@ OpenAI_AudioTranscription audio(openai);
 #include "alien.h"
 AlienAnimation alien;
 
-// The shared WiFi-config object (hardware.h on the device; the host build
-// defines it here so alien.cpp's `extern ESPWifiConfig wifiConfig;` links).
-#include <ESPWifiConfig.h>
-ESPWifiConfig wifiConfig("TamAIgotchi", 8080, -1, false, "", "", true);
-
 // The ESP object (Arduino.h shim) - defined here so the extern links.
 EspClass ESP;
 

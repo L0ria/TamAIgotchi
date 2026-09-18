@@ -40,6 +40,7 @@ TESTS=(
   tests/test_statusbar.cpp
   tests/test_led.cpp
   tests/test_recorder.cpp
+  tests/test_alien.cpp
 )
 
 echo "[run_tests] compiling: ${MODULES[*]}"
