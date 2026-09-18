@@ -199,15 +199,17 @@ void loop() {
 
   if (recState == RECORDING) {
     // Stream I2S audio into the preallocated buffer (blocking, ~97 ms).
-    size_t n = i2s.readBytes((char *)(recorder.rec_buf + 44 + recorder.rec_pos), REC_CHUNK_BYTES);
-    recorder.rec_pos += n;
+    // The buffer state is private (issue #49, step 6): the I2S read target
+    // + the position advance go through the Recorder streaming API.
+    size_t n = i2s.readBytes((char *)recorder.pcmDestination(), REC_CHUNK_BYTES);
+    recorder.noteChunk(n);
 
     // Live recording counter (issue #33, step 3 of the UI restructure in
     // #29, Q10): status line 1 = "Recording (max 10 s)", line 2 = elapsed
     // seconds. The I2S read loop is chunked (~97 ms), so the counter
     // refreshes naturally each loop pass - throttled to once per whole
     // second to avoid re-drawing ~10x/s.
-    unsigned long recSeconds = (millis() - recorder.rec_start) / 1000UL;
+    unsigned long recSeconds = recorder.elapsedMs() / 1000UL;
     static unsigned long recSecondsShown = 0;
     if (recSeconds != recSecondsShown) {
       recSecondsShown = recSeconds;
@@ -219,11 +221,11 @@ void loop() {
     if (!mainBtn.isHeld()) {
       D_TDLN(F("button released - stopping recording"));
       stop = true;
-    } else if (recorder.rec_pos >= recorder.rec_buf_bytes) {
+    } else if (recorder.isBufferFull()) {
       Serial.println(F("Recording buffer full - stopping"));
       D_TDLN(F("recording buffer full - stopping"));
       stop = true;
-    } else if ((millis() - recorder.rec_start) >= (unsigned long)MAX_REC_SECONDS * 1000UL) {
+    } else if (recorder.elapsedMs() >= (unsigned long)MAX_REC_SECONDS * 1000UL) {
       Serial.println(F("Max recording time reached - stopping"));
       D_TDLN(F("max recording time reached - stopping"));
       stop = true;
@@ -236,7 +238,7 @@ void loop() {
     // Recording finished: hand over to the send flow.
     led.off();  // recording LED (issue #47, step 4)
     D_TD(F("recorded "));
-    D_TDDEC(recorder.rec_pos);
+    D_TDDEC(recorder.recordedBytes());
     D_TDLN(F(" bytes of PCM"));
     recState = SENDING;
   }

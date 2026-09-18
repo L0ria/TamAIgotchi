@@ -5,7 +5,7 @@
 #include <Adafruit_SSD1306.h>  // for the shared `display` object
 #include <ESPWifiConfig.h>     // for the shared `wifiConfig` object
 #include "alien.h"      // AlienAnimation (markActivity re-arms the idle timer)
-#include "recorder.h"   // Recorder (startRecording() touches rec_buf / rec_pos / rec_start)
+#include "recorder.h"   // Recorder (startRecording() uses the streaming API, issue #49)
 #include "statusbar.h"  // statusBar (issue #46, step 3)
 #include "messages.h"   // MSG_* user-facing display strings (issue #36, step 6)
 #include "bubble.h"      // bubble.clear() / bubble.render() (issue #34, step 4)
@@ -98,7 +98,7 @@ void resetWifiSettingsAndRestart() {
 // copied verbatim in the IDLE and RESPONSE branches of loop()).
 bool startRecording() {
   D_TDLN(F("button pressed (hold to record)"));
-  if (recorder.rec_buf == NULL) {
+  if (!recorder.bufferAllocated()) {
     // Recording buffer allocation failed at boot: keep the error
     // visible, do not start a take.
     statusBar.error(MSG_REC_BUF_FAIL, MSG_REBOOT_DEVICE);
@@ -112,8 +112,7 @@ bool startRecording() {
     // under the recording status.
     bubble.clear();
     showWifiStatus(); // status lines + renderScreen() (issue #35, step 5)
-    recorder.rec_pos = 0;
-    recorder.rec_start = millis();
+    recorder.beginStreaming();
     recState = RECORDING;
     led.on();  // recording LED (issue #47, step 4)
     // Status bar (issue #33, step 3 of the UI restructure in #29): line 1

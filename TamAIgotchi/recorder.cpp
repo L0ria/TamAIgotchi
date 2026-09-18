@@ -27,6 +27,12 @@ bool Recorder::bufferAllocated() const {
 // Returns true on success; on failure the error is shown on the display
 // (no fallback to the old fixed 5 s recording).
 bool Recorder::initRecBuffer() {
+  // Idempotent: the buffer is allocated once and never freed (the firmware
+  // calls this once at boot; a second call is a no-op, not a re-allocation).
+  if (bufferAllocated()) {
+    return true;
+  }
+
   // Steady-state free memory after WiFi + web server + I2S are up.
   size_t free_mem = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
   bool have_psram = (free_mem > 0);
@@ -112,21 +118,60 @@ void Recorder::patchWavHeader(size_t pcm_bytes) {
   rec_buf[43] = (uint8_t)((pcm_bytes >> 24) & 0xFF);
 }
 
+
+// --- take streaming (issue #49, step 6 of 11 of the refactoring plan in
+// #42) -----------------------------------------------------------------------
+// The RECORDING branch of loop() and display.cpp::startRecording() used to
+// read/write rec_buf / rec_pos / rec_start directly; they now go through
+// these (the buffer state is private). Behavior is identical - the same
+// arithmetic, one call earlier in the stack.
+
+// Start a new take: reset the position + stamp the start time.
+void Recorder::beginStreaming() {
+  rec_pos = 0;
+  rec_start = millis();
+}
+
+// The I2S read target for the next chunk (the 44-byte WAV header is
+// skipped). NULL-safe by construction: loop() only reads while the buffer
+// is allocated (startRecording() checks bufferAllocated()).
+uint8_t* Recorder::pcmDestination() {
+  return rec_buf + 44 + rec_pos;
+}
+
+// Advance the recorded position after a chunk was read.
+void Recorder::noteChunk(size_t n) {
+  rec_pos += n;
+}
+
+// Stop conditions + status (read-only views of the take state).
+bool Recorder::isBufferFull() const {
+  return rec_pos >= rec_buf_bytes;
+}
+
+unsigned long Recorder::elapsedMs() const {
+  return millis() - rec_start;
+}
+
+size_t Recorder::recordedBytes() const {
+  return rec_pos;
+}
+
 // SENDING state: patch the header, transcribe the take, run the LLM call.
 // Returns true if a transcription was produced (false = error already shown).
 bool Recorder::sendRecording() {
-  patchWavHeader(rec_pos);
+  patchWavHeader(recordedBytes());
   D_TD(F("sending "));
-  D_TDDEC(rec_pos);
+  D_TDDEC(recordedBytes());
   D_TDLN(F(" bytes of PCM ("));
-  D_TDDEC((unsigned)(rec_pos / 65536));
+  D_TDDEC((unsigned)(recordedBytes() / 65536));
   D_TDLN(F(" s of audio)"));
 
   // Status bar (issue #33, step 3 of the UI restructure in #29): the
   // "Sending audio" screen (full clear + 1 line) becomes a status line;
   // the byte count already went to Serial above.
   statusBar.show(MSG_SENDING_AUDIO);
-  String transcription = audio.file(rec_buf, 44 + rec_pos, OPENAI_AUDIO_INPUT_FORMAT_WAV);
+  String transcription = audio.file(rec_buf, 44 + recordedBytes(), OPENAI_AUDIO_INPUT_FORMAT_WAV);
   log_d(transcription);
   D_TD(F("transcription length: "));
   D_TDLN(transcription.length());

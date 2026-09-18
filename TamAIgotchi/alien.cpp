@@ -14,7 +14,7 @@
 // point); referenced here instead of passed through every call.
 extern Adafruit_SSD1306 display;
 extern ESPWifiConfig wifiConfig;
-extern Recorder recorder;      // recorder.rec_buf (canAnimate)
+extern Recorder recorder;      // recorder.bufferAllocated() (canAnimate, issue #49)
 extern RecState recState;     // app state (response timeout in update)
 
 // Any button press is activity: it stops the animation and restarts the
@@ -30,7 +30,7 @@ void AlienAnimation::markActivity() {
 // The animation only runs while the device is fully usable: STA mode,
 // connected, and the recording buffer allocated (see issue #16 answers).
 bool AlienAnimation::canAnimate() const {
-  return (recorder.rec_buf != NULL) &&
+  return recorder.bufferAllocated() &&
          (wifiConfig.ESP_mode != AP_MODE) &&
          wifiConfig.wifi_connected;
 }
