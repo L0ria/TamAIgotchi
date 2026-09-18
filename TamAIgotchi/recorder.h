@@ -9,8 +9,8 @@
 //
 // The `chat` / `audio` OpenAI clients and alien.markActivity() are declared
 // in TamAIgotchi.ino and referenced via extern (see recorder.cpp). Status
-// + bubble rendering goes through statusbar.{h,cpp} (statusShow/statusError,
-// issue #33, step 3) and bubble.{h,cpp} (bubble.setText/bubble.render - the
+// + bubble rendering goes through statusbar.{h,cpp} (statusBar.show /
+// statusBar.error, issue #46, step 3) and bubble.{h,cpp} (bubble.setText/bubble.render - the
 // prompt text, issue #33, and the response text, issue #34, step 4), which
 // use the shared `display` object.
 #pragma once

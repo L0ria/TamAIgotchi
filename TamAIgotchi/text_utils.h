@@ -4,7 +4,8 @@
 //   wrapText() - word-wrap a String into fixed-width char lines
 //
 // The display-role helper that used to live here was replaced by the status
-// bar (statusShow() / statusError(), issue #32, step 2) and removed during
+// bar (statusBar.show() / statusBar.error(), issue #46, step 3) and
+// removed during
 // the UI restructure in #29 (issues #33 / #36) - this module is wrapText()
 // only.
 #pragma once

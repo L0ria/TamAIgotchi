@@ -6,7 +6,7 @@
 #include <ESPWifiConfig.h>     // for the shared `wifiConfig` object
 #include "alien.h"      // AlienAnimation (markActivity re-arms the idle timer)
 #include "recorder.h"   // Recorder (startRecording() touches rec_buf / rec_pos / rec_start)
-#include "statusbar.h"  // statusShow() / statusError() (issue #32, step 2)
+#include "statusbar.h"  // statusBar (issue #46, step 3)
 #include "messages.h"   // MSG_* user-facing display strings (issue #36, step 6)
 #include "bubble.h"      // bubble.clear() / bubble.render() (issue #34, step 4)
 #include "display.h"     // renderScreen() (issue #35, step 5)
@@ -23,13 +23,13 @@ extern AlienAnimation alien;
 // THE single render pass (issue #35, step 5 of 6 of the UI restructure in
 // #29): one clearDisplay() + one display() per frame.
 //   status bar (top 16 px) -> alien sprite (always present) -> bubble.
-// The status bar draws its two stored lines itself (statusShow() keeps its
-// "store + draw region" job and then calls renderScreen()); the alien and
-// the bubble keep their own current-content state, so renderScreen() just
-// composes them.
+// The status bar draws its two stored lines itself (statusBar.draw()
+// keeps its "store + draw region" job and then calls renderScreen());
+// the alien and the bubble keep their own current-content state, so
+// renderScreen() just composes them.
 void renderScreen() {
   display.clearDisplay();
-  statusShow();          // redraw the status bar's two lines (no panel push)
+  statusBar.draw();     // redraw the status bar's two lines (no panel push)
   alien.drawSprite();    // stand frame / current animation frame (always)
   // Bubble: while the idle animation runs, the animation owns the bubble
   // content (bubble.renderText() - the line table is untouched, so the
@@ -53,8 +53,8 @@ void showWifiStatus() {
   if (wifiConfig.ESP_mode == AP_MODE) {
     // AP mode (issue #29 Q2): line 1 = AP name, line 2 = setup address.
     // No "No WiFi - join AP" line. The full setup URL goes to Serial.
-    statusShow(wifiConfig.get_AP_name(),
-               String(MSG_AP_IP_PREFIX) + WIFI_SETUP_PORT);
+    statusBar.show(wifiConfig.get_AP_name(),
+                 String(MSG_AP_IP_PREFIX) + WIFI_SETUP_PORT);
     Serial.print(F("AP name: "));
     Serial.println(wifiConfig.get_AP_name());
     Serial.print(F("Setup URL: http://"));
@@ -64,14 +64,14 @@ void showWifiStatus() {
   } else if (wifiConfig.wifi_connected) {
     // STA (issue #29 Q3): line 1 = "WiFi: <SSID>" (SSID truncated to 16
     // chars, no ellipsis - 21 - 5), line 2 = "IP: x.x.x.x".
-    statusShow(String(MSG_WIFI_PREFIX) + WiFi.SSID().substring(0, 16),
-               String(MSG_IP_PREFIX) + wifiConfig.ESP_IP.toString());
+    statusBar.show(String(MSG_WIFI_PREFIX) + WiFi.SSID().substring(0, 16),
+                 String(MSG_IP_PREFIX) + wifiConfig.ESP_IP.toString());
     Serial.print(F("Connected to "));
     Serial.print(WiFi.SSID());
     Serial.print(F(" IP: "));
     Serial.println(wifiConfig.ESP_IP.toString());
   } else {
-    statusShow(MSG_WIFI_CONNECTING);
+    statusBar.show(MSG_WIFI_CONNECTING);
   }
   alien.markActivity(); // issue #16: showWifiStatus() is always the result of
                        // a button press (or boot) - re-arm the idle timer
@@ -87,7 +87,7 @@ void showWifiStatus() {
 void resetWifiSettingsAndRestart() {
   wifiConfig.resetAllSettings(); // public library helper (v2.3.0), all settings
   Serial.println(F("WiFi settings reset. Rebooting into setup AP mode..."));
-  statusShow(MSG_WIFI_RESET, MSG_WIFI_REBOOT);
+  statusBar.show(MSG_WIFI_RESET, MSG_WIFI_REBOOT);
   delay(300);
   ESP.restart();
 }
@@ -99,7 +99,7 @@ bool startRecording() {
   if (recorder.rec_buf == NULL) {
     // Recording buffer allocation failed at boot: keep the error
     // visible, do not start a take.
-    statusError(MSG_REC_BUF_FAIL, MSG_REBOOT_DEVICE);
+    statusBar.error(MSG_REC_BUF_FAIL, MSG_REBOOT_DEVICE);
     return false;
   }
   if (wifiConfig.ESP_mode != AP_MODE && wifiConfig.wifi_connected) {
@@ -118,7 +118,7 @@ bool startRecording() {
     // = "Recording (max 10 s)" (20 chars, fits the 21-char limit); line 2
     // counts up the elapsed seconds from the RECORDING branch of loop()
     // (throttled to once per whole second).
-    statusShow(MSG_RECORDING);
+    statusBar.show(MSG_RECORDING);
     D_TDLN(F("recording start (hold button, max 10 s)"));
     return true;
   }

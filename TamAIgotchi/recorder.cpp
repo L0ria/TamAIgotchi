@@ -5,7 +5,7 @@
 #include <Arduino.h>  // String, Serial, F(), memcpy
 #include <esp_heap_caps.h>  // heap_caps_malloc / heap_caps_get_free_size (PSRAM recording buffer)
 #include <OpenAI.h>  // OpenAI_ChatCompletion / OpenAI_AudioTranscription / OpenAI_StringResponse / log_d
-#include "statusbar.h"   // statusShow() / statusError() (issue #33, step 3)
+#include "statusbar.h"   // statusBar (issue #46, step 3)
 #include "bubble.h"      // bubble.setText() (prompt in the bubble, issue #33)
 #include "messages.h"    // MSG_* user-facing display strings (issue #36, step 6)
 #include "display.h"     // renderScreen() (issue #35, step 5: the single pass)
@@ -53,7 +53,7 @@ bool Recorder::initRecBuffer() {
     // Status bar (issue #33, step 3 of the UI restructure in #29): the
     // full detail goes to Serial (the status bar fits 21 chars/line).
     Serial.println(F("Record buffer alloc failed: Not enough free memory for the recording buffer."));
-    statusError(MSG_REC_BUF_FAIL, MSG_NOT_ENOUGH_MEM);
+    statusBar.error(MSG_REC_BUF_FAIL, MSG_NOT_ENOUGH_MEM);
     return false;
   }
 
@@ -65,7 +65,7 @@ bool Recorder::initRecBuffer() {
   if (rec_buf == NULL) {
     // Status bar (issue #33): full detail to Serial (21 chars/line limit).
     Serial.println(F("Record buffer alloc failed: heap_caps_malloc failed for the recording buffer."));
-    statusError(MSG_REC_BUF_FAIL, MSG_REC_BUF_MALLOC_FAIL);
+    statusBar.error(MSG_REC_BUF_FAIL, MSG_REC_BUF_MALLOC_FAIL);
     return false;
   }
 
@@ -125,7 +125,7 @@ bool Recorder::sendRecording() {
   // Status bar (issue #33, step 3 of the UI restructure in #29): the
   // "Sending audio" screen (full clear + 1 line) becomes a status line;
   // the byte count already went to Serial above.
-  statusShow(MSG_SENDING_AUDIO);
+  statusBar.show(MSG_SENDING_AUDIO);
   String transcription = audio.file(rec_buf, 44 + rec_pos, OPENAI_AUDIO_INPUT_FORMAT_WAV);
   log_d(transcription);
   D_TD(F("transcription length: "));
@@ -139,7 +139,7 @@ bool Recorder::sendRecording() {
     // Status bar (issue #33): 2-line form; the full detail goes to Serial
     // (the status bar fits 21 chars/line).
     Serial.println(F("Transcription failed: LocalAI unreachable or returned an error. Check LOCALAI_URL in the setup page (Custom tab)."));
-    statusError(MSG_TRANSCRIBE_FAIL, MSG_CHECK_URL);
+    statusBar.error(MSG_TRANSCRIBE_FAIL, MSG_CHECK_URL);
     return false;
   }
 
@@ -154,7 +154,7 @@ void Recorder::textGeneration(const String& prompt) {
   // "Sending prompt" line becomes a status line, and the prompt text
   // (content, #29 section 4 row 10) goes into the speech bubble (step 1
   // module). renderScreen() pushes the full frame (issue #35, step 5).
-  statusShow(MSG_SENDING_PROMPT);
+  statusBar.show(MSG_SENDING_PROMPT);
   bubble.setText(prompt);
   renderScreen();
 
@@ -167,9 +167,9 @@ void Recorder::textGeneration(const String& prompt) {
   // response plus the server's error text (e.g. "The model 'gpt-4' does
   // not exist"), which we must not swallow into a blank display.
   if (result.error()) {
-    // Status bar (issue #33): statusError() truncates the detail to 21
-    // chars on screen; the full server text always goes to Serial.
-    statusError(MSG_LLM_ERROR, String(result.error()));
+    // Status bar (issue #33): statusBar.error() truncates the detail to
+    // 21 chars on screen; the full server text always goes to Serial.
+    statusBar.error(MSG_LLM_ERROR, String(result.error()));
     return;
   }
 
@@ -182,7 +182,7 @@ void Recorder::textGeneration(const String& prompt) {
     // HTTP 200 but no content (e.g. an unexpected response shape).
     // Status bar (issue #33): 2-line form; full detail to Serial.
     Serial.println(F("Empty response: LocalAI returned no text. Check the model and its settings."));
-    statusError(MSG_EMPTY_RESPONSE, MSG_CHECK_MODEL);
+    statusBar.error(MSG_EMPTY_RESPONSE, MSG_CHECK_MODEL);
     return;
   }
 
@@ -195,7 +195,7 @@ void Recorder::textGeneration(const String& prompt) {
   // (issue #35, step 5).
   bubble.setText(response);
   renderScreen();
-  statusShow(MSG_RESPONSE_PREFIX "1/" + String(bubble.lineCount()));
+  statusBar.show(MSG_RESPONSE_PREFIX "1/" + String(bubble.lineCount()));
   recState = RESPONSE;
   // Issue #16: re-arm the inactivity timer so the animation returns
   // ALIEN_RESPONSE_TIMEOUT_MS after the response has been shown without a

@@ -1,4 +1,6 @@
-// Status bar (issue #32, step 2 of 6 of the UI restructure in #29).
+// Status bar (issue #32, step 2 of 6 of the UI restructure in #29;
+// wrapped in the StatusBar class in step 3 of 11 of the refactoring plan
+// in #42, issue #46 - 1:1 wrap, behavior unchanged).
 #include "statusbar.h"
 #include <Arduino.h>  // String, Serial, F()
 #include <Adafruit_SSD1306.h>  // for the shared `display` object
@@ -11,7 +13,7 @@ extern Adafruit_SSD1306 display;
 
 // Truncate `s` to at most STATUS_CHARS_PER_LINE chars (no ellipsis -
 // plain hard cut, like the bubble's line table) and return it.
-static String statusFit(const String& s) {
+String StatusBar::fit(const String& s) {
   if (s.length() > (unsigned)STATUS_CHARS_PER_LINE)
     return s.substring(0, STATUS_CHARS_PER_LINE);
   return s;
@@ -19,27 +21,22 @@ static String statusFit(const String& s) {
 
 // Blank the two status lines (top 16 px of the 128x64 panel) without
 // touching the rest of the frame.
-static void statusBlank() {
+void StatusBar::blank() {
   display.fillRect(0, 0, SCREEN_WIDTH, 16, BLACK);
 }
-
-// The two status lines currently shown (renderScreen(), issue #35, step 5,
-// re-draws them on every frame from this stored state).
-static String statusL1 = "";
-static String statusL2 = "";
 
 // Draw the two status lines (y=0 / y=8) from the stored state into the
 // current frame. No display.display() - renderScreen() owns the panel push
 // (issue #35, step 5 of 6 of the UI restructure in #29).
-void statusShow() {
-  statusBlank();
+void StatusBar::draw() {
+  blank();
   display.setTextSize(1);
   display.setTextColor(WHITE);
   display.setCursor(0, 0);
-  display.print(statusL1);
-  if (statusL2.length()) {
+  display.print(l1_);
+  if (l2_.length()) {
     display.setCursor(0, 8);
-    display.print(statusL2);
+    display.print(l2_);
   }
 }
 
@@ -48,38 +45,46 @@ void statusShow() {
 // issue #35, step 5). Each line is truncated to STATUS_CHARS_PER_LINE
 // (21 chars); the two lines are blanked (not cleared) first, so the rest
 // of the frame (alien / bubble) is preserved by renderScreen().
-void statusShow(const String& l1, const String& l2) {
-  String a = statusFit(l1);
-  String b = statusFit(l2);
+void StatusBar::show(const String& l1, const String& l2) {
+  String a = fit(l1);
+  String b = fit(l2);
   Serial.println(a);
   Serial.println(b);
 
-  statusL1 = a;
-  statusL2 = b;
+  l1_ = a;
+  l2_ = b;
   renderScreen();
 }
 
 // 1-arg form: line 2 empty.
-void statusShow(const String& l1) {
-  statusShow(l1, String(""));
+void StatusBar::show(const String& l1) {
+  show(l1, String(""));
 }
 
 // 2-line error form: title on line 1, detail on line 2 (each truncated
 // to STATUS_CHARS_PER_LINE); the full title + detail go to Serial.
-void statusError(const String& title, const String& detail) {
+void StatusBar::error(const String& title, const String& detail) {
   Serial.print(F("ERROR: "));
   Serial.println(title);
   if (detail.length()) {
     Serial.print(F("       "));
     Serial.println(detail);
   }
-  statusShow(title, detail);
+  show(title, detail);
 }
 
 // Blank the two status lines and push the frame through the single render
 // pass (issue #35, step 5).
-void statusClear() {
-  statusL1 = "";
-  statusL2 = "";
+void StatusBar::clear() {
+  l1_ = "";
+  l2_ = "";
   renderScreen();
 }
+
+int StatusBar::lineCount() const {
+  if (l1_.length()) return l2_.length() ? 2 : 1;
+  return 0;
+}
+
+const String& StatusBar::line1() const { return l1_; }
+const String& StatusBar::line2() const { return l2_; }
