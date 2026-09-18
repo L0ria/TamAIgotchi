@@ -160,7 +160,13 @@ void loop() {
   // (step 4, issue #18: the state machine now lives in the AlienAnimation
   // class - see alien.h; update() starts it on the idle timeout + advances
   // the 70 s loop.)
-  alien.update();
+  // issue #50, step 7 of 11 of the refactoring plan in #42: the alien no
+  // longer reads the app state / recorder / WiFi library via extern - the
+  // caller computes + passes the three inputs (RESPONSE flag, the recording
+  // buffer allocated, and the WiFi link up).
+  alien.update(recState == RESPONSE,
+               recorder.bufferAllocated(),
+               (wifiConfig.ESP_mode != AP_MODE) && wifiConfig.wifi_connected);
 
   // Debounce edge-detect for all buttons (step 2, issue #18): call once
   // per loop() pass for every button, before reading isPressed() /
