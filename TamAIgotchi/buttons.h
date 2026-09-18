@@ -11,6 +11,7 @@
 //   update()            - debounce edge-detect; call once per loop() pass
 //   isPressed()         - true for exactly one loop() pass per debounced press
 //   isLongPressed()     - true for exactly one loop() pass per >=5 s hold
+//   isHeld()            - true while the (debounced) level is LOW (button held)
 //   reset()             - re-arm the debounce (forget the current press)
 #pragma once
 #include "config.h"  // BUTTON_DEBOUNCE_MS, BUTTON_LONG_PRESS_MS
@@ -22,6 +23,7 @@ class Button {
   void update();      // debounce edge-detect (call once per loop() for every button)
   bool isPressed();   // true for exactly one loop() pass per press (debounced)
   bool isLongPressed();  // true for exactly one loop() pass per >= BUTTON_LONG_PRESS_MS hold
+  bool isHeld() const;   // true while the button is held (debounced level LOW)
   void reset();       // re-arm: forget the current press (used after SENDING)
 
   int pin;            // the GPIO this button is wired to
