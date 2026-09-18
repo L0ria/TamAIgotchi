@@ -9,6 +9,7 @@
 #include "statusbar.h"  // statusBar (issue #46, step 3)
 #include "messages.h"   // MSG_* user-facing display strings (issue #36, step 6)
 #include "bubble.h"      // bubble.clear() / bubble.render() (issue #34, step 4)
+#include "led.h"       // led.on() (issue #47, step 4)
 #include "display.h"     // renderScreen() (issue #35, step 5)
 
 // Shared objects + state (defined in hardware.h / owned by the sketch);
@@ -18,6 +19,7 @@ extern Adafruit_SSD1306 display;
 extern ESPWifiConfig wifiConfig;
 extern Recorder recorder;
 extern RecState recState;
+extern Led led;        // recording LED (issue #47, step 4)
 extern AlienAnimation alien;
 
 // THE single render pass (issue #35, step 5 of 6 of the UI restructure in
@@ -113,7 +115,7 @@ bool startRecording() {
     recorder.rec_pos = 0;
     recorder.rec_start = millis();
     recState = RECORDING;
-    digitalWrite(LED_PIN, HIGH);
+    led.on();  // recording LED (issue #47, step 4)
     // Status bar (issue #33, step 3 of the UI restructure in #29): line 1
     // = "Recording (max 10 s)" (20 chars, fits the 21-char limit); line 2
     // counts up the elapsed seconds from the RECORDING branch of loop()
