@@ -22,10 +22,10 @@
 #include <Adafruit_SSD1306.h>
 #include "bubble.h"
 
-// The shared bubble object (TamAIgotchi.ino on the device; the host build
-// defines it here so the modules' `extern Bubble bubble;` links) - the
-// same pattern as the shared `display` object.
-Bubble bubble;
+// The shared bubble object is defined in tests/test_main.cpp (the host
+// build's equivalent of the instance in TamAIgotchi.ino) - moved there in
+// step 8 (issue #51) so display.cpp's `bubble_` reference links.
+extern Bubble bubble;
 
 // The shared display object (defined in tests/test_main.cpp for the host
 // build); the render assertions read the SSD1306 shim's recorded counters.

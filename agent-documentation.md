@@ -7,17 +7,17 @@ re-appeared when a rule was relaxed.
 
 ## Single-render-pass rule (pitfall 5)
 
-One `renderScreen()` per frame = **status bar + alien + bubble**, with exactly
-**one `clearDisplay()` + one `display()`**.
+One `displayMgr.render()` per frame = **status bar + alien + bubble**, with
+exactly **one `clearDisplay()` + one `display()`**.
 
-- `renderScreen()` (display.cpp) is the ONLY place that calls
-  `display.clearDisplay()` / `display.display()`. Every state change (status
+- `Display::render()` (display.cpp) is the ONLY place that calls
+  `panel_.clearDisplay()` / `panel_.display()`. Every state change (status
   line, bubble text, animation phase, scroll) ends in that one call.
 - **Do not split it back up.** If each region clears/pushes on its own, the
   three regions can be drawn in different frames → flicker / half-states
   (a status line without its alien, a bubble without its text).
-- The status bar draws its two stored lines itself (`statusShow()`), the alien
-  and the bubble keep their own current-content state; `renderScreen()` just
+- The status bar draws its two stored lines itself (`statusBar.draw()`), the
+  alien and the bubble keep their own current-content state; `render()` just
   composes them. Keep that division.
 
 ## Status rule: 21 chars × 2 (pitfall 10)
@@ -26,8 +26,9 @@ Status messages must fit **21 chars/line × 2 lines** (font size 1, the top two
 lines of the 128×64 panel — `STATUS_CHARS_PER_LINE`).
 
 - Longer text goes to the **bubble** or **Serial** — **never rely on the
-  SSD1306 driver clipping**. `statusShow()` / `statusError()` truncate to 21
-  chars, so an over-long message can no longer spill into the alien/bubble area,
+  SSD1306 driver clipping**. `statusBar.show()` / `statusBar.error()` truncate
+  to 21 chars, so an over-long message can no longer spill into the
+  alien/bubble area,
   but the *correct* fix is to shorten the message, not to lean on the cut.
 - Three messages overflowed before this restructure and had to be shortened:
   `Initializing I2S bus...`, `Failed to initialize I2S bus!`,

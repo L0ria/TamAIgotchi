@@ -16,8 +16,9 @@
 //
 // The shared `alien` object is defined in tests/test_main.cpp (the host
 // build's equivalent of the instance in TamAIgotchi.ino). Time is driven
-// with the shim clock (host_set_millis()). In the host build renderScreen()
-// is a no-op, so the tests assert on state() / phase(), not on the frame.
+// with the shim clock (host_set_millis()). The tests assert on state() /
+// phase(), not on the frame (the render pass is exercised separately in
+// test_display.cpp).
 #include "test_main.h"
 #include <Arduino.h>  // host shim: host_set_millis
 #include "config.h"   // ALIEN_* timings

@@ -5,8 +5,8 @@
 // share via extern). Everything else lives in dedicated modules:
 //   hardware.h   - shared objects (display, i2s, wifiConfig, openai/chat/audio)
 //                  + hardwareInit() (pinMode + OLED + I2S bring-up)
-//   display.h    - showWifiStatus() / resetWifiSettingsAndRestart() /
-//                  startRecording() (dedup)
+//   display.h    - displayMgr (the Display class: render() / showWifiStatus() /
+//                  resetWifiSettingsAndRestart() / startRecording(), issue #51, step 8)
 //   recorder.h   - PSRAM recording buffer + SENDING/RESPONSE flow
 //   alien.h      - the idle-alien animation (issue #16)
 //   buttons.h    - the debounced buttons (step 2)
@@ -15,8 +15,7 @@
 //   statusbar.h  - statusBar (show / error / clear / draw, step 3,
 //                  issue #46: the top two lines are the status bar)
 #include "hardware.h"   // shared hardware objects + hardwareInit()
-#include "display.h"    // showWifiStatus() / resetWifiSettingsAndRestart() /
-                        // startRecording()
+#include "display.h"    // displayMgr (the Display class, issue #51, step 8)
 #include "buttons.h"    // Button instances
 #include "recorder.h"   // Recorder + RecState
 #include "alien.h"      // AlienAnimation
@@ -79,6 +78,15 @@ StatusBar statusBar;
 // - the instance lives in the sketch, the modules reference it via the
 // extern in led.h).
 Led led(LED_PIN);
+
+// Display manager (step 8 of 11 of the refactoring in #42, issue #51): the
+// shared display object owning the single render pass + the display-level
+// actions (showWifiStatus / resetWifiSettingsAndRestart / startRecording).
+// Constructed AFTER the six objects it references (display / statusBar /
+// alien / bubble / wifiConfig / recorder / led) - the same shared-object
+// pattern as `bubble` / `statusBar` / `led` (the instance lives in the
+// sketch, the modules reference it via the extern in display.h).
+Display displayMgr(display, statusBar, alien, bubble, wifiConfig, recorder, led);
 
 void setup() {
   Serial.begin(115200);
@@ -145,7 +153,7 @@ void setup() {
   audio.setLanguage("en");
 
 /* show the final WiFi status (access point name + IP, or the assigned IP) */
-  showWifiStatus();
+  displayMgr.showWifiStatus();
   D_TDLN(F("setup() done"));
 }
 
@@ -181,7 +189,7 @@ void loop() {
   if (scrollDownBtn.isLongPressed()) {
     Serial.println(F("WiFi-config button held 5 s - resetting WiFi settings"));
     D_TDLN(F("WiFi-config button long-press: resetting WiFi settings and rebooting"));
-    resetWifiSettingsAndRestart(); // does not return (reboots)
+    displayMgr.resetWifiSettingsAndRestart(); // does not return (reboots)
   }
 
   // -----------------------------------------------------------------------
@@ -198,7 +206,7 @@ void loop() {
       // Issue #16: a press is activity - stop the animation (if running) and
       // re-arm the inactivity timer.
       alien.markActivity();
-      startRecording();         // deduped block (display.h); shows the error / AP status
+      displayMgr.startRecording(); // deduped block (display.h); shows the error / AP status
     }
     return;
   }
@@ -269,10 +277,10 @@ void loop() {
     // refresh the "Response x/y" status counter. Called after every
     // scroll / jump, and on every press (a press also recovers the screen
     // if the idle animation was running when it landed, issue #16: the
-    // bubble still holds the response text, so renderScreen() restores
+    // bubble still holds the response text, so displayMgr.render() restores
     // it - Q4).
     auto renderResponse = []() {
-      renderScreen();
+      displayMgr.render();
       statusBar.show(MSG_RESPONSE_PREFIX + String(bubble.scrollOffset() + 1) + "/"
                  + String(bubble.lineCount()));
     };
@@ -302,7 +310,7 @@ void loop() {
       D_TDLN(F("scroll-up button long-press: back to IDLE"));
       bubble.clear(); // Q4: the response is removed when we leave the view
       recState = IDLE;
-      showWifiStatus(); // also marks activity (issue #16)
+      displayMgr.showWifiStatus(); // also marks activity (issue #16)
       mainBtn.reset(); // re-arm the main button for the next press
       return;
     }
@@ -324,7 +332,7 @@ void loop() {
     // Main button: starts a new recording (same as in IDLE).
     if (mainBtn.isPressed()) {
       alien.markActivity();
-      startRecording(); // deduped block (display.h); clears the bubble (issue #34)
+      displayMgr.startRecording(); // deduped block (display.h); clears the bubble (issue #34)
     }
     return;
   }

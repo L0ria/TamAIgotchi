@@ -45,9 +45,9 @@ class Recorder {
   // only ways loop() / display.cpp touch it.
 
   // Start a new take: reset the recorded position to 0 and stamp the start
-  // time (millis()). What display.cpp::startRecording() used to do with
+  // time (millis()). What Display::startRecording() (display.cpp) used to do with
   // `rec_pos = 0; rec_start = millis();` - the WiFi/buffer checks stay in
-  // startRecording().
+  // Display::startRecording().
   void beginStreaming();
 
   // The I2S read target for the next chunk: rec_buf + 44 + rec_pos (the
