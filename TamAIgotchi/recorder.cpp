@@ -17,7 +17,6 @@
 // OpenAI_AudioTranscription` are gone - the clients are
 // constructor-injected references (the same pattern as the Display class,
 // issue #51, step 8).
-extern RecState recState;
 extern AlienAnimation alien;  // markActivity() on response ready
 
 // issue #52, step 9 of 11 of the refactoring plan in #42: the OpenAI
@@ -251,7 +250,6 @@ void Recorder::textGeneration(const String& prompt) {
   bubble.setText(response);
   displayMgr.render();
   statusBar.show(MSG_RESPONSE_PREFIX "1/" + String(bubble.lineCount()));
-  recState = RESPONSE;
   // Issue #16: re-arm the inactivity timer so the animation returns
   // ALIEN_RESPONSE_TIMEOUT_MS after the response has been shown without a
   // button press (driven from loop() via alien.markActivity()).

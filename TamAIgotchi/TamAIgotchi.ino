@@ -1,13 +1,18 @@
 // TamAIgotchi - ESP32 based client for LocalAI (app shell).
 //
-// Step 5 of the refactoring proposed in issue #18: this file now only
-// contains setup() + loop() (plus the state-machine globals the modules
-// share via extern). Everything else lives in dedicated modules:
+// Step 10 of the refactoring proposed in issue #42: this file now only
+// contains setup() + loop() (loop() is the object wiring + the ESP-Wifi-
+// Config machinery + the button debounce edge-detect + app.update()).
+// Everything else lives in dedicated modules:
 //   hardware.h   - hw (the Hardware class, issue #52, step 9: owns the six
 //                  shared library objects panel/i2s/wifi/openai/chat/audio
 //                  + init() (pinMode + OLED + I2S bring-up))
 //   display.h    - displayMgr (the Display class: render() / showWifiStatus() /
 //                  resetWifiSettingsAndRestart() / startRecording(), issue #51, step 8)
+//   app.h        - app (the App class, issue #53, step 10: owns the
+//                  IDLE/RECORDING/SENDING/RESPONSE state machine, formerly
+//                  the recState global + the ~180 lines of inline logic in
+//                  loop(); the RecState enum moved here from recorder.h)
 //   recorder.h   - PSRAM recording buffer + SENDING/RESPONSE flow
 //   alien.h      - the idle-alien animation (issue #16)
 //   buttons.h    - the debounced buttons (step 2)
@@ -17,8 +22,9 @@
 //                  issue #46: the top two lines are the status bar)
 #include "hardware.h"   // hw (the Hardware class, issue #52, step 9)
 #include "display.h"    // displayMgr (the Display class, issue #51, step 8)
+#include "app.h"        // app (the App class, issue #53, step 10) + RecState
 #include "buttons.h"    // Button instances
-#include "recorder.h"   // Recorder + RecState
+#include "recorder.h"   // Recorder
 #include "alien.h"      // AlienAnimation
 #include "statusbar.h"  // statusBar (issue #46, step 3)
 #include "messages.h"   // MSG_* user-facing display strings (issue #36, step 6)
@@ -34,26 +40,6 @@
 // reference it via the extern in hardware.h).
 Hardware hw;
 
-// State machine (issue #9 + issue #13):
-//   IDLE      - waiting for a debounced button press
-//   RECORDING - button held: streaming I2S audio into the preallocated
-//               PSRAM buffer; LED on; stops on release / buffer full / cap
-//   SENDING   - patching the WAV header + uploading to LocalAI for
-//               transcription, then the LLM call (blocking)
-//   RESPONSE  - the LLM reply is shown in the speech bubble (issue #34,
-//               step 4 of the UI restructure in #29): GPIO9 short = scroll
-//               down, GPIO11 short = scroll up, double-press of the same
-//               button = jump to start/end (option A, #29 Q7), GPIO11 hold
-//               5 s = back to IDLE, main button = new recording
-RecState recState = IDLE;  // app state machine (issue #9 + #13); shared with the recorder (recorder.h)
-
-// ---------------------------------------------------------------------------
-// Idle animation (issue #16): a small pixel-art alien that entertains the
-// screen after ALIEN_IDLE_TIMEOUT_MS without any button press (see config.h
-// for all timings). The animation also returns ALIEN_RESPONSE_TIMEOUT_MS
-// after the LLM response has been shown without a button press.
-//   ANIM_IDLE   - waiting for inactivity (IDLE or RESPONSE state)
-//   ANIM_ACTIVE - running the 70 s loop (bubble / wave / stand phases)
 // Buttons (step 2 of the refactoring, issue #18): one Button instance per
 // physical button. update() is called once per loop() pass for every
 // button before reading isPressed() / isLongPressed() (see buttons.h).
@@ -105,6 +91,15 @@ Led led(LED_PIN);
 // sketch, the modules reference it via the extern in display.h).
 Display displayMgr(hw.panel(), statusBar, alien, bubble, hw.wifi(), recorder, led);
 
+// App (step 10 of 11 of the refactoring in #42, issue #53): the app state
+// machine (IDLE / RECORDING / SENDING / RESPONSE) that used to be the
+// recState global + the ~180 lines of inline logic in loop(). Constructed
+// LAST - it references every shared object above (the same shared-object
+// pattern as `displayMgr` - the instance lives in the sketch, the modules
+// reference it via the extern in app.h).
+App app(hw, displayMgr, recorder, alien, mainBtn, scrollUpBtn, scrollDownBtn,
+        bubble, statusBar, led);
+
 void setup() {
   Serial.begin(115200);
   D_TDLN(F("setup() start"));
@@ -141,8 +136,8 @@ void setup() {
   if (!recorder.initRecBuffer()) {
     // No fallback to the old fixed 5 s recording: the error is already on
     // the display. Recording stays disabled until the device is rebooted
-    // with enough free memory.
-    recState = IDLE;
+    // with enough free memory. (issue #53, step 10: the app state is owned
+    // by the App class - it starts at IDLE by default, so no assignment.)
   }
 
 /* setup openai (endpoint + key from the stored settings: Custom tab of the
@@ -183,20 +178,6 @@ void loop() {
   // network and serves the setup page while in AP mode.
   hw.wifi().handle(10000);
 
-  // Idle animation (issue #16): starts after ALIEN_IDLE_TIMEOUT_MS without
-  // any button press (IDLE state) or after ALIEN_RESPONSE_TIMEOUT_MS of the
-  // response being shown (RESPONSE state); any button press stops it.
-  // (step 4, issue #18: the state machine now lives in the AlienAnimation
-  // class - see alien.h; update() starts it on the idle timeout + advances
-  // the 70 s loop.)
-  // issue #50, step 7 of 11 of the refactoring plan in #42: the alien no
-  // longer reads the app state / recorder / WiFi library via extern - the
-  // caller computes + passes the three inputs (RESPONSE flag, the recording
-  // buffer allocated, and the WiFi link up).
-  alien.update(recState == RESPONSE,
-               recorder.bufferAllocated(),
-               (hw.wifi().ESP_mode != AP_MODE) && hw.wifi().wifi_connected);
-
   // Debounce edge-detect for all buttons (step 2, issue #18): call once
   // per loop() pass for every button, before reading isPressed() /
   // isLongPressed().
@@ -204,167 +185,9 @@ void loop() {
   scrollUpBtn.update();
   scrollDownBtn.update();
 
-  // WiFi-config button (GPIO9): a 5 s long-press wipes the stored WiFi
-  // settings and reboots into the setup AP (escape hatch for a wrong
-  // password). Checked in every state, before the state machine branches.
-  if (scrollDownBtn.isLongPressed()) {
-    Serial.println(F("WiFi-config button held 5 s - resetting WiFi settings"));
-    D_TDLN(F("WiFi-config button long-press: resetting WiFi settings and rebooting"));
-    displayMgr.resetWifiSettingsAndRestart(); // does not return (reboots)
-  }
-
-  // -----------------------------------------------------------------------
-  // Hold-to-record state machine (issue #9):
-  //   IDLE      - debounced button press starts recording (if WiFi is up and
-  //               the recording buffer was allocated)
-  //   RECORDING - button held: stream I2S audio into the PSRAM buffer;
-  //               stops on release / buffer full / MAX_REC_SECONDS
-  //   SENDING   - patch WAV header, transcribe, LLM call (blocking)
-  // -----------------------------------------------------------------------
-
-  if (recState == IDLE) {
-    if (mainBtn.isPressed()) {  // one action per press (debounced)
-      // Issue #16: a press is activity - stop the animation (if running) and
-      // re-arm the inactivity timer.
-      alien.markActivity();
-      displayMgr.startRecording(); // deduped block (display.h); shows the error / AP status
-    }
-    return;
-  }
-
-  if (recState == RECORDING) {
-    // Stream I2S audio into the preallocated buffer (blocking, ~97 ms).
-    // The buffer state is private (issue #49, step 6): the I2S read target
-    // + the position advance go through the Recorder streaming API.
-    size_t n = hw.i2s().readBytes((char *)recorder.pcmDestination(), REC_CHUNK_BYTES);
-    recorder.noteChunk(n);
-
-    // Live recording counter (issue #33, step 3 of the UI restructure in
-    // #29, Q10): status line 1 = "Recording (max 10 s)", line 2 = elapsed
-    // seconds. The I2S read loop is chunked (~97 ms), so the counter
-    // refreshes naturally each loop pass - throttled to once per whole
-    // second to avoid re-drawing ~10x/s.
-    unsigned long recSeconds = recorder.elapsedMs() / 1000UL;
-    static unsigned long recSecondsShown = 0;
-    if (recSeconds != recSecondsShown) {
-      recSecondsShown = recSeconds;
-      statusBar.show(MSG_RECORDING, String(recSeconds) + " s");
-    }
-
-    // Stop conditions (checked after every chunk):
-    bool stop = false;
-    if (!mainBtn.isHeld()) {
-      D_TDLN(F("button released - stopping recording"));
-      stop = true;
-    } else if (recorder.isBufferFull()) {
-      Serial.println(F("Recording buffer full - stopping"));
-      D_TDLN(F("recording buffer full - stopping"));
-      stop = true;
-    } else if (recorder.elapsedMs() >= (unsigned long)MAX_REC_SECONDS * 1000UL) {
-      Serial.println(F("Max recording time reached - stopping"));
-      D_TDLN(F("max recording time reached - stopping"));
-      stop = true;
-    }
-
-    if (!stop) {
-      return; // still recording
-    }
-
-    // Recording finished: hand over to the send flow.
-    led.off();  // recording LED (issue #47, step 4)
-    D_TD(F("recorded "));
-    D_TDDEC(recorder.recordedBytes());
-    D_TDLN(F(" bytes of PCM"));
-    recState = SENDING;
-  }
-
-  if (recState == RESPONSE) {
-    // Scrollable response in the speech bubble (issue #34, step 4 of 6 of
-    // the UI restructure in #29): the reply lives in the bubble table;
-    // the "Response x/y" counter is status line 1 (issue #29 Q6).
-    // Issue #16: any button press is activity - it stops the animation
-    // (if running) and restarts the auto-return timer.
-    //
-    // Double-press jump (issue #29 Q7, option A): the same scroll button
-    // pressed twice within DOUBLE_PRESS_MS jumps to the start (up) / end
-    // (down) so long answers (~50+ wrapped lines) can be reached without
-    // ~45 single presses. A press of the OTHER button resets the pair, so
-    // up-down-up is never a double. The 5 s holds keep their meaning.
-    static unsigned long lastPressMs  = 0;  // millis() of the last scroll press
-    static int           lastPressBtn = -1; // -1 none, 0 = down, 1 = up
-    static const unsigned long DOUBLE_PRESS_MS = 500;
-
-    // Re-render the frame (single render pass, issue #35, step 5) +
-    // refresh the "Response x/y" status counter. Called after every
-    // scroll / jump, and on every press (a press also recovers the screen
-    // if the idle animation was running when it landed, issue #16: the
-    // bubble still holds the response text, so displayMgr.render() restores
-    // it - Q4).
-    auto renderResponse = []() {
-      displayMgr.render();
-      statusBar.show(MSG_RESPONSE_PREFIX + String(bubble.scrollOffset() + 1) + "/"
-                 + String(bubble.lineCount()));
-    };
-
-    // GPIO9 (scroll down): short press = next line; double press = jump to
-    // the end; the 5 s long-press (WiFi reset) is already handled above
-    // in every state.
-    if (scrollDownBtn.isPressed()) {
-      alien.markActivity();
-      unsigned long now = millis();
-      bool isDouble = (lastPressBtn == 0) && ((now - lastPressMs) < DOUBLE_PRESS_MS);
-      if (isDouble) {
-        bubble.jumpTo(true);
-        D_TDLN(F("double-press down: jump to end"));
-      } else {
-        bubble.scroll(true);
-        D_TD(F("scroll down ")); D_TDLN(bubble.scrollOffset() + 1);
-      }
-      lastPressMs = now;
-      lastPressBtn = 0;
-      renderResponse();
-    }
-    // GPIO11 (scroll up): short press = previous line; double press = jump
-    // to the start; 5 s hold = exit the response view back to IDLE.
-    if (scrollUpBtn.isLongPressed()) {
-      Serial.println(F("Scroll-up button held 5 s - exiting response view"));
-      D_TDLN(F("scroll-up button long-press: back to IDLE"));
-      bubble.clear(); // Q4: the response is removed when we leave the view
-      recState = IDLE;
-      displayMgr.showWifiStatus(); // also marks activity (issue #16)
-      mainBtn.reset(); // re-arm the main button for the next press
-      return;
-    }
-    if (scrollUpBtn.isPressed()) {
-      alien.markActivity();
-      unsigned long now = millis();
-      bool isDouble = (lastPressBtn == 1) && ((now - lastPressMs) < DOUBLE_PRESS_MS);
-      if (isDouble) {
-        bubble.jumpTo(false);
-        D_TDLN(F("double-press up: jump to start"));
-      } else {
-        bubble.scroll(false);
-        D_TD(F("scroll up ")); D_TDLN(bubble.scrollOffset() + 1);
-      }
-      lastPressMs = now;
-      lastPressBtn = 1;
-      renderResponse();
-    }
-    // Main button: starts a new recording (same as in IDLE).
-    if (mainBtn.isPressed()) {
-      alien.markActivity();
-      displayMgr.startRecording(); // deduped block (display.h); clears the bubble (issue #34)
-    }
-    return;
-  }
-
-  // SENDING (blocking: transcription + LLM call). On success textGeneration()
-  // already switched us to the RESPONSE view; on any error it stays in
-  // SENDING, in which case we fall back to IDLE.
-  recorder.sendRecording();
-  if (recState != RESPONSE) {
-    recState = IDLE;
-    mainBtn.reset(); // re-arm the debounce for the next press
-    alien.markActivity(); // issue #16: re-arm the idle-animation timer
-  }
+  // The app state machine (issue #53, step 10 of 11 of the refactoring in
+  // #42): the IDLE / RECORDING / SENDING / RESPONSE flow, the alien idle
+  // animation update, the 5 s WiFi-reset escape hatch and the response
+  // scroll / double-press logic all live in App::update() now (app.cpp).
+  app.update();
 }

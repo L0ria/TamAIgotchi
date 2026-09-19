@@ -22,12 +22,22 @@ inline void log_d(const String& s) { (void)s; }
 
 // The LLM response object: tokens() / getAt(i) / error(). (Defined before
 // OpenAI_ChatCompletion, which returns it.)
+//
+// Test hooks (issue #53, step 10): the host build can drive the success
+// path of the SENDING flow (textGeneration() stores the reply in the
+// bubble + the App class switches to RESPONSE) - the shim values are
+// read by message() below.
+extern const char* host_openai_chat_response;
+extern const char* host_openai_chat_error;
 class OpenAI_StringResponse {
  public:
   OpenAI_StringResponse() = default;
   unsigned long tokens() const { return 0; }
-  String getAt(size_t i) const { (void)i; return String(); }
-  const char* error() const { return nullptr; }
+  String getAt(size_t i) const {
+    (void)i;
+    return String(host_openai_chat_response ? host_openai_chat_response : "");
+  }
+  const char* error() const { return host_openai_chat_error; }
 };
 
 class OpenAI {
@@ -42,13 +52,15 @@ class OpenAI_ChatCompletion {
   OpenAI_StringResponse message(const String& prompt) { (void)prompt; return OpenAI_StringResponse(); }
 };
 
-// audio.file(buf, len, format) - the transcription upload (no-op on the host).
+// audio.file(buf, len, format) - the transcription upload (no-op on the
+// host; the shim value is read by the tests - issue #53, step 10).
+extern const char* host_openai_transcription;
 class OpenAI_AudioTranscription {
  public:
   explicit OpenAI_AudioTranscription(OpenAI& o) { (void)o; }
   String file(const uint8_t* buf, size_t len, const char* format) {
     (void)buf; (void)len; (void)format;
-    return String();
+    return String(host_openai_transcription ? host_openai_transcription : "");
   }
 };
 

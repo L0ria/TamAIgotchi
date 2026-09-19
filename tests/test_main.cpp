@@ -43,6 +43,17 @@ TwoWire Wire;
 #include "hardware.h"
 Hardware hw;
 
+// The three shared button objects (TamAIgotchi.ino on the device; the host
+// build defines them here so the modules' references + the App instance
+// link) - the same shared-object pattern as the other shared objects.
+// issue #53, step 10 of 11 of the refactoring plan in #42: the App class
+// takes them by constructor-injected reference (the same pattern as the
+// Display class, issue #51, step 8).
+#include "buttons.h"
+Button mainBtn(BUTTON_PIN);
+Button scrollUpBtn(SCROLL_UP_PIN);
+Button scrollDownBtn(WIFI_CONFIG_BUTTON_PIN);
+
 // The shared status-bar object (TamAIgotchi.ino on the device; the host
 // build defines it here so statusbar.cpp's `extern StatusBar statusBar;`
 // links) - the same pattern as the shared `hw` object. issue #52, step 9:
@@ -63,11 +74,6 @@ Led led(LED_PIN);
 // references (hw.chat() / hw.audio()) - the recorder.cpp externs are gone.
 #include "recorder.h"
 Recorder recorder(hw.chat(), hw.audio());
-
-// The app state machine (TamAIgotchi.ino on the device; the host build
-// defines it here so recorder.cpp's `extern RecState recState;` links).
-// Starts at IDLE.
-RecState recState = IDLE;
 
 // (issue #52, step 9: the OpenAI client globals moved into the `hw`
 // Hardware object above - they are now hw.openai() / hw.chat() /
@@ -117,6 +123,25 @@ Bubble bubble(hw.panel());
 // tests can assert on the SSD1306 shim's frames / cleared counters.
 #include "display.h"
 Display displayMgr(hw.panel(), statusBar, alien, bubble, hw.wifi(), recorder, led);
+
+// The OpenAI shim test hooks (tests/shims/OpenAI.h) - issue #53, step 10:
+// the SENDING flow success path (transcription + LLM reply) is driven
+// through these values. Default: empty (the no-op error path, as before).
+const char* host_openai_transcription = nullptr;
+const char* host_openai_chat_response = nullptr;
+const char* host_openai_chat_error = nullptr;
+
+// The shared app object (TamAIgotchi.ino on the device; the host build
+// defines it here so app.cpp's `extern App app;` links - the same
+// shared-object pattern as the other shared objects). issue #53, step 10
+// of 11 of the refactoring plan in #42: the app state machine (IDLE /
+// RECORDING / SENDING / RESPONSE) that used to be the `recState` global
+// (defined here before this step) is now owned by the App class - the
+// tests reach it through app.state() / app.update(). Constructed LAST,
+// after the objects it references (the same order as the device).
+#include "app.h"
+App app(hw, displayMgr, recorder, alien, mainBtn, scrollUpBtn, scrollDownBtn,
+        bubble, statusBar, led);
 
 void host_set_pin(int pin, int level) {
   if (pin >= 0 && pin < 64) host_pin_level[pin] = level;

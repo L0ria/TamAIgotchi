@@ -33,10 +33,6 @@ class String;  // forward declaration (complete type via <Arduino.h> in the .cpp
 class OpenAI_ChatCompletion;       // forward declaration (complete type via <OpenAI.h> in the .cpp)
 class OpenAI_AudioTranscription;   // forward declaration (complete type via <OpenAI.h> in the .cpp)
 
-// App state machine (issue #9 + #13). Owned by the sketch (TamAIgotchi.ino)
-// and shared with the recorder via extern; declared here so both TUs agree.
-enum RecState { IDLE, RECORDING, SENDING, RESPONSE };
-
 class Recorder {
  public:
   // issue #52, step 9 of 11 of the refactoring plan in #42: the OpenAI
