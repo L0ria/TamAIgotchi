@@ -11,11 +11,21 @@
 #include "display.h"     // displayMgr.render() (issue #51, step 8: the single pass)
 
 // Shared objects + helpers declared in TamAIgotchi.ino (the sketch entry
-// point); referenced here instead of passed through every call.
+// point); referenced here instead of passed through every call (the
+// shared-object pattern). issue #52, step 9 of 11 of the refactoring plan
+// in #42: the `extern OpenAI_ChatCompletion` / `extern
+// OpenAI_AudioTranscription` are gone - the clients are
+// constructor-injected references (the same pattern as the Display class,
+// issue #51, step 8).
 extern RecState recState;
 extern AlienAnimation alien;  // markActivity() on response ready
-extern OpenAI_ChatCompletion chat;
-extern OpenAI_AudioTranscription audio;
+
+// issue #52, step 9 of 11 of the refactoring plan in #42: the OpenAI
+// clients are injected by reference - the externs above are gone. The
+// clients are sketch-lifetime (members of the shared `hw` object,
+// hardware.cpp), so the references are valid for the whole program.
+Recorder::Recorder(OpenAI_ChatCompletion& chat, OpenAI_AudioTranscription& audio)
+    : chat_(chat), audio_(audio) {}
 
 bool Recorder::bufferAllocated() const {
   return rec_buf != NULL;
@@ -171,7 +181,7 @@ bool Recorder::sendRecording() {
   // "Sending audio" screen (full clear + 1 line) becomes a status line;
   // the byte count already went to Serial above.
   statusBar.show(MSG_SENDING_AUDIO);
-  String transcription = audio.file(rec_buf, 44 + recordedBytes(), OPENAI_AUDIO_INPUT_FORMAT_WAV);
+  String transcription = audio_.file(rec_buf, 44 + recordedBytes(), OPENAI_AUDIO_INPUT_FORMAT_WAV);
   log_d(transcription);
   D_TD(F("transcription length: "));
   D_TDLN(transcription.length());
@@ -203,7 +213,7 @@ void Recorder::textGeneration(const String& prompt) {
   bubble.setText(prompt);
   displayMgr.render();
 
-  OpenAI_StringResponse result = chat.message(prompt);
+  OpenAI_StringResponse result = chat_.message(prompt);
   Serial.printf("Received message. Tokens: %u\n", result.tokens());
   D_TD(F("response length: "));
   D_TDLN(String(result.getAt(0)).length());

@@ -17,10 +17,11 @@
 // The six dependencies (panel, status bar, alien, bubble, WiFi config,
 // recorder) are constructor-injected references (issue #51, step 8 of 11
 // of the refactoring plan in #42: the free-function externs are gone).
-// The shared `display` / `wifiConfig` objects stay defined in hardware.h;
-// the `statusBar` / `alien` / `bubble` / `recorder` / `led` objects stay
-// defined in TamAIgotchi.ino - the Display instance (displayMgr) is
-// constructed after them, the same shared-object pattern.
+// The shared panel / WiFi objects are members of the `hw` Hardware object
+// (hardware.cpp, issue #52, step 9); the `statusBar` / `alien` / `bubble`
+// / `recorder` / `led` objects stay defined in TamAIgotchi.ino - the
+// Display instance (displayMgr) is constructed after them, the same
+// shared-object pattern.
 //
 // Circular include broken (finding #7 in the #42 audit): display.h no
 // longer includes alien.h / recorder.h - it forward-declares the six

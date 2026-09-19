@@ -8,12 +8,17 @@
 #include "bubble.h"     // bubble.renderText() (issue #35, step 5 follow-up)
 #include "display.h"    // displayMgr.render() (issue #51, step 8: the single pass)
 
-// Shared object declared in hardware.h (the sketch's hardware init);
-// referenced here instead of passed through every call. (issue #50, step 7
-// of 11 of the refactoring plan in #42: the recorder / RecState /
-// ESPWifiConfig externs are gone - canAnimate() and update() take their
-// inputs as parameters.)
-extern Adafruit_SSD1306 display;
+// issue #52, step 9 of 11 of the refactoring plan in #42: the `extern
+// Adafruit_SSD1306 display;` is gone - the panel is a constructor-injected
+// reference (the same pattern as the Display class, issue #51, step 8).
+// (issue #50, step 7: the recorder / RecState / ESPWifiConfig externs are
+// gone - canAnimate() and update() take their inputs as parameters.)
+
+// issue #52, step 9 of 11 of the refactoring plan in #42: the panel is
+// injected by reference - the extern above is gone. The panel is
+// sketch-lifetime (a member of the shared `hw` object, hardware.cpp), so
+// the reference is valid for the whole program.
+AlienAnimation::AlienAnimation(Adafruit_SSD1306& panel) : panel_(panel) {}
 
 // Any button press is activity: it stops the animation and restarts the
 // inactivity timers (both the idle start and the response auto-return).
@@ -36,7 +41,7 @@ bool AlienAnimation::canAnimate(bool bufferOk, bool wifiOk) const {
 // Draw one alien sprite at (x, y) using the Adafruit_GFX 1-bit format
 // (MSB-first row-major, as in alien.h).
 void AlienAnimation::renderAlien(int frame, int x, int y) {
-  display.drawBitmap(x, y, alienFrameData[frame], ALIEN_SPRITE_W, ALIEN_SPRITE_H, WHITE);
+  panel_.drawBitmap(x, y, alienFrameData[frame], ALIEN_SPRITE_W, ALIEN_SPRITE_H, WHITE);
 }
 
 // Draw the alien sprite at its anchor (4, 42) into the current frame

@@ -27,15 +27,28 @@ SerialClass Serial;
 size_t host_free_heap_bytes = 0;   // esp_get_free_heap_size() (Arduino.h shim)
 size_t host_heap_free_bytes = 0;   // heap_caps_get_free_size() (esp_heap_caps.h shim)
 
-// The shared display object (hardware.h on the device; the host build
-// defines it here so the modules' `extern Adafruit_SSD1306 display;` links).
-Adafruit_SSD1306 display;  // defaults 128x64; the fake ignores the HW args
+// The shared hardware object (hardware.cpp on the device; the host build
+// defines it here so the modules' `extern Hardware hw;` links) - issue
+// #52, step 9 of 11 of the refactoring plan in #42: the six library
+// objects (panel / i2s / wifi / openai / chat / audio) that used to be
+// defined here (display / wifiConfig / openai / chat / audio) are now the
+// private members of `hw`, exactly like the device (hardware.cpp).
+// Hardware::init() is never called from the tests - the bring-up is
+// device-only (the shims would just count no-op calls).
+// The TwoWire object (the real core defines it; the host build defines it
+// here so hardware.cpp's `&Wire` in the Hardware constructor links).
+#include <Wire.h>
+TwoWire Wire;
+
+#include "hardware.h"
+Hardware hw;
 
 // The shared status-bar object (TamAIgotchi.ino on the device; the host
 // build defines it here so statusbar.cpp's `extern StatusBar statusBar;`
-// links) - the same pattern as the shared `display` object.
+// links) - the same pattern as the shared `hw` object. issue #52, step 9:
+// the panel is a constructor-injected reference (hw.panel()).
 #include "statusbar.h"
-StatusBar statusBar;
+StatusBar statusBar(hw.panel());
 
 // The shared recording-LED object (TamAIgotchi.ino on the device; the
 // host build defines it here so led.cpp's `extern Led led;` links) -
@@ -46,25 +59,28 @@ Led led(LED_PIN);
 // The shared recorder object (TamAIgotchi.ino on the device; the host
 // build defines it here so recorder.cpp's `extern Recorder recorder;`
 // links) - the same pattern as the shared `statusBar` / `led` objects.
+// issue #52, step 9: the OpenAI clients are constructor-injected
+// references (hw.chat() / hw.audio()) - the recorder.cpp externs are gone.
 #include "recorder.h"
-Recorder recorder;
+Recorder recorder(hw.chat(), hw.audio());
 
 // The app state machine (TamAIgotchi.ino on the device; the host build
 // defines it here so recorder.cpp's `extern RecState recState;` links).
 // Starts at IDLE.
 RecState recState = IDLE;
 
-// The OpenAI clients + the shared alien object (TamAIgotchi.ino on the
-// device; the host build defines them here so recorder.cpp's externs link).
-// The network behavior is NOT emulated (see the OpenAI.h shim) - the tests
-// exercise the buffer/streaming API, not the SENDING/RESPONSE flow.
-#include <OpenAI.h>
-OpenAI openai;
-OpenAI_ChatCompletion chat(openai);
-OpenAI_AudioTranscription audio(openai);
+// (issue #52, step 9: the OpenAI client globals moved into the `hw`
+// Hardware object above - they are now hw.openai() / hw.chat() /
+// hw.audio(), the same as on the device (hardware.cpp). The network
+// behavior is NOT emulated (see the OpenAI.h shim) - the tests exercise
+// the buffer/streaming API, not the SENDING/RESPONSE flow.)
 
+// The shared alien object (TamAIgotchi.ino on the device; the host build
+// defines it here so recorder.cpp's `extern AlienAnimation alien;` links).
+// issue #52, step 9: the panel is a constructor-injected reference
+// (hw.panel()) - the alien.cpp extern is gone.
 #include "alien.h"
-AlienAnimation alien;
+AlienAnimation alien(hw.panel());
 
 // The ESP object (Arduino.h shim) - defined here so the extern links.
 EspClass ESP;
@@ -74,12 +90,9 @@ EspClass ESP;
 #include <WiFi.h>
 String host_wifi_ssid;
 
-// The shared WiFi-config object (hardware.h on the device; the host build
-// defines it here so display.cpp's `wifi_` reference + showWifiStatus()
-// link) - the same shared-object pattern as `display` / `statusBar`.
-#include <ESPWifiConfig.h>
-#include "config.h"  // WIFI_AP_NAME, WIFI_SETUP_PORT
-ESPWifiConfig wifiConfig(WIFI_AP_NAME, WIFI_SETUP_PORT, -1, false, "", "", true);
+// (issue #52, step 9: the shared WiFi-config object moved into the
+// `hw` Hardware object above - it is now hw.wifi(), the same as on the
+// device (hardware.cpp).)
 
 // The shared WiFi object (tests/shims/WiFi.h) - defined here so the extern links.
 WiFiClass WiFi;
@@ -89,8 +102,10 @@ WiFiClass WiFi;
 // `extern Bubble bubble;` link) - moved from test_bubble.cpp in step 8
 // (issue #51): display.cpp now reaches `bubble` through the Display class,
 // so the shared object lives with the other shared objects.
+// issue #52, step 9: the panel is a constructor-injected reference
+// (hw.panel()) - the bubble.cpp extern is gone.
 #include "bubble.h"
-Bubble bubble;
+Bubble bubble(hw.panel());
 
 // The shared display-manager object (TamAIgotchi.ino on the device; the
 // host build defines it here so the modules' `extern Display displayMgr;`
@@ -101,7 +116,7 @@ Bubble bubble;
 // (added to run_tests.sh), so the single render pass is now real and the
 // tests can assert on the SSD1306 shim's frames / cleared counters.
 #include "display.h"
-Display displayMgr(display, statusBar, alien, bubble, wifiConfig, recorder, led);
+Display displayMgr(hw.panel(), statusBar, alien, bubble, hw.wifi(), recorder, led);
 
 void host_set_pin(int pin, int level) {
   if (pin >= 0 && pin < 64) host_pin_level[pin] = level;

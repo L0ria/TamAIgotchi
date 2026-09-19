@@ -21,6 +21,7 @@
 // buffer allocated by test_recorder, so the "buffer not allocated" case
 // needs a fresh Recorder).
 #include "test_main.h"
+#include "hardware.h"  // hw (the shared Hardware object, issue #52, step 9)
 #include <Arduino.h>
 #include <Adafruit_SSD1306.h>
 #include <ESPWifiConfig.h>  // ESPWifiConfig + STA_MODE / AP_MODE
@@ -33,9 +34,10 @@
 #include "config.h"         // WIFI_AP_NAME, WIFI_SETUP_PORT, LED_PIN
 #include "messages.h"       // MSG_WIFI_CONNECTING, MSG_RECORDING
 
-// The shared display object (defined in tests/test_main.cpp for the host
-// build); the render assertions read the SSD1306 shim's recorded counters.
-extern Adafruit_SSD1306 display;
+// The shared panel object (a member of the shared `hw` Hardware object,
+// defined in tests/test_main.cpp for the host build - issue #52, step 9);
+// the render assertions read the SSD1306 shim's recorded counters.
+extern Hardware hw;
 // The shared display manager (defined in tests/test_main.cpp).
 extern Display displayMgr;
 // The app state machine (defined in tests/test_main.cpp) - startRecording()
@@ -56,7 +58,11 @@ struct LocalDeps {
   Led led;
   Display d;
   LocalDeps()
-      : wifi(WIFI_AP_NAME, WIFI_SETUP_PORT, -1, false, "", "", true),
+      : status(panel),
+        alien(panel),
+        bubble(panel),
+        wifi(WIFI_AP_NAME, WIFI_SETUP_PORT, -1, false, "", "", true),
+        rec(hw.chat(), hw.audio()),
         led(LED_PIN),
         d(panel, status, alien, bubble, wifi, rec, led) {}
 };
@@ -65,25 +71,25 @@ struct LocalDeps {
 
 TEST(display_render_single_clear_and_display_per_call) {
   // Reset the fake display counters, then issue exactly one render pass.
-  display.reset();
-  CHECK_EQ_INT(display.frames, 0);
-  CHECK_EQ_INT(display.cleared, 0);
+  hw.panel().reset();
+  CHECK_EQ_INT(hw.panel().frames, 0);
+  CHECK_EQ_INT(hw.panel().cleared, 0);
 
   displayMgr.render();
 
   // Exactly one clearDisplay() + one display() (the single-render-pass rule,
   // issue #35, step 5) - no more, no less.
-  CHECK_EQ_INT(display.cleared, 1);
-  CHECK_EQ_INT(display.frames, 1);
+  CHECK_EQ_INT(hw.panel().cleared, 1);
+  CHECK_EQ_INT(hw.panel().frames, 1);
 }
 
 TEST(display_render_two_calls_two_frames) {
   // Two render() calls -> two clearDisplay() + two display() (one each).
-  display.reset();
+  hw.panel().reset();
   displayMgr.render();
   displayMgr.render();
-  CHECK_EQ_INT(display.cleared, 2);
-  CHECK_EQ_INT(display.frames, 2);
+  CHECK_EQ_INT(hw.panel().cleared, 2);
+  CHECK_EQ_INT(hw.panel().frames, 2);
 }
 
 // --- startRecording() (buffer not allocated) --------------------------------

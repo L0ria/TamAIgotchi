@@ -31,6 +31,10 @@
 // ---------------------------------------------------------------------------
 #define HIGH 1
 #define LOW  0
+// Pin modes (hardware.cpp's pinMode() calls; the host shim ignores them).
+#define INPUT 0x0
+#define OUTPUT 0x1
+#define INPUT_PULLUP 0x2
 #define PROGMEM
 #define F(x) x
 

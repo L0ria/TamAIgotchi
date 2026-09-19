@@ -23,6 +23,7 @@
 #include <Arduino.h>        // host shim: host_set_millis / host_set_heap_free
 #include <esp_heap_caps.h>  // host shim: host_set_heap_free
 #include "recorder.h"
+#include "hardware.h"  // hw (the shared Hardware object: hw.chat() / hw.audio())
 
 // The shared recorder object (defined in tests/test_main.cpp, the host
 // build's equivalent of the instance in TamAIgotchi.ino) - the same
@@ -43,7 +44,7 @@ TEST(recorder_not_allocated_before_init) {
   // A fresh instance has no buffer (the shared `recorder` object may have
   // been initialized by earlier tests, so the initial-state assertion uses
   // its own instance).
-  Recorder fresh;
+  Recorder fresh(hw.chat(), hw.audio());
   CHECK(!fresh.bufferAllocated());
 }
 

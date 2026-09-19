@@ -3,8 +3,9 @@
 // Step 5 of the refactoring proposed in issue #18: this file now only
 // contains setup() + loop() (plus the state-machine globals the modules
 // share via extern). Everything else lives in dedicated modules:
-//   hardware.h   - shared objects (display, i2s, wifiConfig, openai/chat/audio)
-//                  + hardwareInit() (pinMode + OLED + I2S bring-up)
+//   hardware.h   - hw (the Hardware class, issue #52, step 9: owns the six
+//                  shared library objects panel/i2s/wifi/openai/chat/audio
+//                  + init() (pinMode + OLED + I2S bring-up))
 //   display.h    - displayMgr (the Display class: render() / showWifiStatus() /
 //                  resetWifiSettingsAndRestart() / startRecording(), issue #51, step 8)
 //   recorder.h   - PSRAM recording buffer + SENDING/RESPONSE flow
@@ -14,7 +15,7 @@
 //                  removed during the UI restructure in #29, issues #33/#36)
 //   statusbar.h  - statusBar (show / error / clear / draw, step 3,
 //                  issue #46: the top two lines are the status bar)
-#include "hardware.h"   // shared hardware objects + hardwareInit()
+#include "hardware.h"   // hw (the Hardware class, issue #52, step 9)
 #include "display.h"    // displayMgr (the Display class, issue #51, step 8)
 #include "buttons.h"    // Button instances
 #include "recorder.h"   // Recorder + RecState
@@ -23,6 +24,15 @@
 #include "messages.h"   // MSG_* user-facing display strings (issue #36, step 6)
 #include "bubble.h"     // bubble (scroll / jump / render, issue #34, step 4)
 #include "led.h"      // led (recording LED, issue #47, step 4)
+
+// Hardware (issue #52, step 9 of 11 of the refactoring in #42): owns the
+// six shared library objects (panel / i2s / wifi / openai / chat / audio,
+// formerly the globals in hardware.h) + the bring-up (hw.init(), formerly
+// hardwareInit()). Constructed FIRST - every other shared object below
+// references its members (the same shared-object pattern as `bubble` /
+// `statusBar` / `led`: the instance lives in the sketch, the modules
+// reference it via the extern in hardware.h).
+Hardware hw;
 
 // State machine (issue #9 + issue #13):
 //   IDLE      - waiting for a debounced button press
@@ -54,24 +64,31 @@ Button scrollDownBtn(WIFI_CONFIG_BUTTON_PIN);
 // Recorder (step 3 of the refactoring, issue #18): owns the preallocated
 // PSRAM recording buffer + the SENDING/RESPONSE flow (recorder.initRecBuffer /
 // recorder.sendRecording / textGeneration). See recorder.h.
-Recorder recorder;
+// issue #52, step 9: the OpenAI clients are constructor-injected references
+// (hw.chat() / hw.audio()) - the `extern OpenAI_*` in recorder.cpp is gone.
+Recorder recorder(hw.chat(), hw.audio());
 
 // Alien (step 4 of the refactoring, issue #18): owns the idle-animation state
 // machine + rendering (markActivity() on button events, update() each pass).
-// See alien.h.
-AlienAnimation alien;
+// See alien.h. issue #52, step 9: the panel is a constructor-injected
+// reference (hw.panel()) - the `extern Adafruit_SSD1306` in alien.cpp is gone.
+AlienAnimation alien(hw.panel());
 
 // Bubble (step 2 of 11 of the refactoring in #42, issue #45): the shared
 // speech-bubble object (the codebase's existing shared-object pattern -
 // the instance lives in the sketch, the modules reference it via the
-// extern in bubble.h, same as `display`).
-Bubble bubble;
+// extern in bubble.h, same as `display`). issue #52, step 9: the panel is a
+// constructor-injected reference (hw.panel()) - the `extern Adafruit_SSD1306`
+// in bubble.cpp is gone.
+Bubble bubble(hw.panel());
 
 // Status bar (step 3 of 11 of the refactoring in #42, issue #46): the
 // shared status-bar object (same shared-object pattern as `bubble` - the
 // instance lives in the sketch, the modules reference it via the extern
-// in statusbar.h).
-StatusBar statusBar;
+// in statusbar.h). issue #52, step 9: the panel is a constructor-injected
+// reference (hw.panel()) - the `extern Adafruit_SSD1306` in statusbar.cpp is
+// gone.
+StatusBar statusBar(hw.panel());
 
 // Recording LED (step 4 of 11 of the refactoring in #42, issue #47): the
 // shared LED object (same shared-object pattern as `bubble` / `statusBar`
@@ -86,37 +103,38 @@ Led led(LED_PIN);
 // alien / bubble / wifiConfig / recorder / led) - the same shared-object
 // pattern as `bubble` / `statusBar` / `led` (the instance lives in the
 // sketch, the modules reference it via the extern in display.h).
-Display displayMgr(display, statusBar, alien, bubble, wifiConfig, recorder, led);
+Display displayMgr(hw.panel(), statusBar, alien, bubble, hw.wifi(), recorder, led);
 
 void setup() {
   Serial.begin(115200);
   D_TDLN(F("setup() start"));
 
   // Hardware bring-up (step 5 of the refactoring, issue #18): pinMode +
-  // OLED init + I2S init, moved to hardwareInit() (hardware.h).
-  if (!hardwareInit()) {
+  // OLED init + I2S init, in Hardware::init() (issue #52, step 9: the
+  // inline hardwareInit() is a method of the Hardware class).
+  if (!hw.init()) {
     return; // I2S failed to initialize - the error is already on the display
   }
   D_TDLN(F("hardware init done (pins, OLED, I2S)"));
 
   // Register the LocalAI user settings BEFORE initialize() (library API
   // requirement). The config.h values are the initial defaults.
-  if (wifiConfig.addSetting("LOCALAI_URL", api_url) < 0)
+  if (hw.wifi().addSetting("LOCALAI_URL", api_url) < 0)
     Serial.println(F("WARNING: could not register LOCALAI_URL setting"));
-  if (wifiConfig.addSetting("LOCALAI_KEY", api_key) < 0)
+  if (hw.wifi().addSetting("LOCALAI_KEY", api_key) < 0)
     Serial.println(F("WARNING: could not register LOCALAI_KEY setting"));
   D_TDLN(F("LocalAI settings registered (LOCALAI_URL, LOCALAI_KEY)"));
 
 /* connect to WiFi (or start the setup access point) */
   statusBar.show(MSG_WIFI_CONNECTING);
-  if (wifiConfig.initialize() == AP_MODE) {
+  if (hw.wifi().initialize() == AP_MODE) {
     // No known network was reachable: the device is broadcasting an access
     // point. Keep the setup web server running so the WiFi can be configured.
-    wifiConfig.Start_HTTP_Server(0);
+    hw.wifi().Start_HTTP_Server(0);
   }
 
   D_TD(F("WiFi mode after initialize(): "));
-  D_TDLN(wifiConfig.ESP_mode == AP_MODE ? "AP (setup page)" : "STA");
+  D_TDLN(hw.wifi().ESP_mode == AP_MODE ? "AP (setup page)" : "STA");
 
 /* allocate the hold-to-record buffer once (PSRAM), before the OpenAI client
    so the upload buffer is sized with the recording buffer already in place */
@@ -129,28 +147,31 @@ void setup() {
 
 /* setup openai (endpoint + key from the stored settings: Custom tab of the
    setup page, config.h defaults on first boot / after a full reset) */
-  String localaiUrl = wifiConfig.getSetting("LOCALAI_URL");
-  String localaiKey = wifiConfig.getSetting("LOCALAI_KEY");
+  String localaiUrl = hw.wifi().getSetting("LOCALAI_URL");
+  String localaiKey = hw.wifi().getSetting("LOCALAI_KEY");
   if (localaiUrl.length() == 0) localaiUrl = api_url;
   if (localaiKey.length() == 0) localaiKey = api_key;
-  openai = OpenAI(localaiKey.c_str(), localaiUrl.c_str());
+  // issue #52, step 9: the client (re)build is a Hardware method (was
+  // `openai = OpenAI(...)`); the chat/audio clients reference the same
+  // object, so they pick up the new endpoint/key automatically.
+  hw.setOpenAI(localaiUrl.c_str(), localaiKey.c_str());
   Serial.print(F("LocalAI endpoint: "));
   Serial.println(localaiUrl);
   D_TD(F("LocalAI endpoint resolved: "));
   D_TDLN(localaiUrl);
 
-  chat.setModel("gpt-4");           //Model to use for completion. Default is gpt-3.5-turbo
+  hw.chat().setModel("gpt-4");           //Model to use for completion. Default is gpt-3.5-turbo
   D_TDLN(F("chat model: gpt-4, max_tokens: 200, temperature: 0.2"));
-  chat.setSystem("You are communicating through a small display, keep answers as short as possible");      //Description of the required assistant
-  chat.setMaxTokens(LLM_MAX_TOKENS); //The maximum number of tokens to generate (issue #35, step 5 of #29: 40 -> 200 via config.h).
-  chat.setTemperature(0.2);         //float between 0 and 2. Higher value gives more random results.
-  chat.setStop("\r");               //Up to 4 sequences where the API will stop generating further tokens.
-  chat.setPresencePenalty(0);       //float between -2.0 and 2.0. Positive values increase the model's likelihood to talk about new topics.
-  chat.setFrequencyPenalty(0);      //float between -2.0 and 2.0. Positive values decrease the model's likelihood to repeat the same line verbatim.
-  chat.setUser("OpenAI-ESP32");     //A unique identifier representing your end-user, which can help OpenAI to monitor and detect abuse.
+  hw.chat().setSystem("You are communicating through a small display, keep answers as short as possible");      //Description of the required assistant
+  hw.chat().setMaxTokens(LLM_MAX_TOKENS); //The maximum number of tokens to generate (issue #35, step 5 of #29: 40 -> 200 via config.h).
+  hw.chat().setTemperature(0.2);         //float between 0 and 2. Higher value gives more random results.
+  hw.chat().setStop("\r");               //Up to 4 sequences where the API will stop generating further tokens.
+  hw.chat().setPresencePenalty(0);       //float between -2.0 and 2.0. Positive values increase the model's likelihood to talk about new topics.
+  hw.chat().setFrequencyPenalty(0);      //float between -2.0 and 2.0. Positive values decrease the model's likelihood to repeat the same line verbatim.
+  hw.chat().setUser("OpenAI-ESP32");     //A unique identifier representing your end-user, which can help OpenAI to monitor and detect abuse.
 
-  audio.setTemperature(0.1);
-  audio.setLanguage("en");
+  hw.audio().setTemperature(0.1);
+  hw.audio().setLanguage("en");
 
 /* show the final WiFi status (access point name + IP, or the assigned IP) */
   displayMgr.showWifiStatus();
@@ -160,7 +181,7 @@ void setup() {
 void loop() {
   // Keep the ESP-Wifi-Config machinery running: it (re)connects to a known
   // network and serves the setup page while in AP mode.
-  wifiConfig.handle(10000);
+  hw.wifi().handle(10000);
 
   // Idle animation (issue #16): starts after ALIEN_IDLE_TIMEOUT_MS without
   // any button press (IDLE state) or after ALIEN_RESPONSE_TIMEOUT_MS of the
@@ -174,7 +195,7 @@ void loop() {
   // buffer allocated, and the WiFi link up).
   alien.update(recState == RESPONSE,
                recorder.bufferAllocated(),
-               (wifiConfig.ESP_mode != AP_MODE) && wifiConfig.wifi_connected);
+               (hw.wifi().ESP_mode != AP_MODE) && hw.wifi().wifi_connected);
 
   // Debounce edge-detect for all buttons (step 2, issue #18): call once
   // per loop() pass for every button, before reading isPressed() /
@@ -215,7 +236,7 @@ void loop() {
     // Stream I2S audio into the preallocated buffer (blocking, ~97 ms).
     // The buffer state is private (issue #49, step 6): the I2S read target
     // + the position advance go through the Recorder streaming API.
-    size_t n = i2s.readBytes((char *)recorder.pcmDestination(), REC_CHUNK_BYTES);
+    size_t n = hw.i2s().readBytes((char *)recorder.pcmDestination(), REC_CHUNK_BYTES);
     recorder.noteChunk(n);
 
     // Live recording counter (issue #33, step 3 of the UI restructure in

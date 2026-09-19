@@ -22,6 +22,7 @@ mkdir -p tests/build
 
 # Modules under test (the firmware .cpp files, compiled for the host).
 MODULES=(
+  TamAIgotchi/hardware.cpp
   TamAIgotchi/text_utils.cpp
   TamAIgotchi/buttons.cpp
   TamAIgotchi/bubble.cpp

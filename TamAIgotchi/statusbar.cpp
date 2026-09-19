@@ -6,10 +6,15 @@
 #include <Adafruit_SSD1306.h>  // for the shared `display` object
 #include "display.h"   // displayMgr.render() (issue #51, step 8: the single pass)
 
-// The `display` object is defined in hardware.h (included by the sketch);
-// reference it here instead of passing it through every call - the same
-// pattern as bubble.cpp / text_utils.cpp / alien.cpp / recorder.cpp.
-extern Adafruit_SSD1306 display;
+// issue #52, step 9 of 11 of the refactoring plan in #42: the `extern
+// Adafruit_SSD1306 display;` is gone - the panel is a constructor-injected
+// reference (the same pattern as the Display class, issue #51, step 8).
+
+// issue #52, step 9 of 11 of the refactoring plan in #42: the panel is
+// injected by reference - the extern above is gone. The panel is
+// sketch-lifetime (a member of the shared `hw` object, hardware.cpp), so
+// the reference is valid for the whole program.
+StatusBar::StatusBar(Adafruit_SSD1306& panel) : panel_(panel) {}
 
 // Truncate `s` to at most STATUS_CHARS_PER_LINE chars (no ellipsis -
 // plain hard cut, like the bubble's line table) and return it.
@@ -22,7 +27,7 @@ String StatusBar::fit(const String& s) {
 // Blank the two status lines (top 16 px of the 128x64 panel) without
 // touching the rest of the frame.
 void StatusBar::blank() {
-  display.fillRect(0, 0, SCREEN_WIDTH, 16, BLACK);
+  panel_.fillRect(0, 0, SCREEN_WIDTH, 16, BLACK);
 }
 
 // Draw the two status lines (y=0 / y=8) from the stored state into the
@@ -30,13 +35,13 @@ void StatusBar::blank() {
 // (issue #35, step 5 of 6 of the UI restructure in #29).
 void StatusBar::draw() {
   blank();
-  display.setTextSize(1);
-  display.setTextColor(WHITE);
-  display.setCursor(0, 0);
-  display.print(l1_);
+  panel_.setTextSize(1);
+  panel_.setTextColor(WHITE);
+  panel_.setCursor(0, 0);
+  panel_.print(l1_);
   if (l2_.length()) {
-    display.setCursor(0, 8);
-    display.print(l2_);
+    panel_.setCursor(0, 8);
+    panel_.print(l2_);
   }
 }
 

@@ -6,10 +6,9 @@
 #include <Adafruit_SSD1306.h>  // for the shared `display` object
 #include "text_utils.h"  // wrapText() (the new width-parameterized core)
 
-// The `display` object is defined in hardware.h (included by the sketch);
-// reference it here instead of passing it through every call - the same
-// pattern as text_utils.cpp / alien.cpp / recorder.cpp / display.cpp.
-extern Adafruit_SSD1306 display;
+// issue #52, step 9 of 11 of the refactoring plan in #42: the `extern
+// Adafruit_SSD1306 display;` is gone - the panel is a constructor-injected
+// reference (the same pattern as the Display class, issue #51, step 8).
 
 // The bubble owns its own static line table (BUBBLE_MAX_LINES x 16 B =
 // 1 KB of static RAM, issue #29 Q7) - no globals in the sketch. The state
@@ -17,6 +16,12 @@ extern Adafruit_SSD1306 display;
 // scrollOffset()). One definition, shared by all instances (there is one:
 // the shared `bubble` object).
 char Bubble::lines_[BUBBLE_MAX_LINES][BUBBLE_CHARS_PER_LINE + 1];
+
+// issue #52, step 9 of 11 of the refactoring plan in #42: the panel is
+// injected by reference - the extern above is gone. The panel is
+// sketch-lifetime (a member of the shared `hw` object, hardware.cpp), so
+// the reference is valid for the whole program.
+Bubble::Bubble(Adafruit_SSD1306& panel) : panel_(panel) {}
 
 // Word-wrap `text` into the static table at BUBBLE_CHARS_PER_LINE
 // chars/line and reset the scroll offset to 0.
@@ -73,25 +78,25 @@ void Bubble::jumpTo(bool toEnd) {
 // edge (font 1 = 6x8 px/char).
 void Bubble::drawFrame(char (*lines)[BUBBLE_CHARS_PER_LINE + 1], int count) {
   // The bubble rectangle - always the same size, always drawn (issue #29 Q8).
-  display.drawRect(BUBBLE_X, BUBBLE_Y, BUBBLE_W, BUBBLE_H, WHITE);
+  panel_.drawRect(BUBBLE_X, BUBBLE_Y, BUBBLE_W, BUBBLE_H, WHITE);
 
   // Clear the interior before re-drawing the visible window: the bubble is
   // re-rendered in place on every scroll / jump (issue #34, step 4), so a
   // jump back up must not leave stale text from a longer window behind.
-  display.fillRect(BUBBLE_X + 1, BUBBLE_Y + 1, BUBBLE_W - 2, BUBBLE_H - 2, BLACK);
+  panel_.fillRect(BUBBLE_X + 1, BUBBLE_Y + 1, BUBBLE_W - 2, BUBBLE_H - 2, BLACK);
 
   // Tail: a small ~4 px filled triangle from the bubble's left edge
   // (x = BUBBLE_X = 30) toward the alien (x 4..27), vertically centered-ish
   // (issue #29 Q9, cosmetic - a 1-line revert if it looks off on the panel).
-  display.fillTriangle(BUBBLE_X - 3, BUBBLE_Y + 18,   // tip (27, 36)
-                       BUBBLE_X,     BUBBLE_Y + 14,   // base top (30, 32)
-                       BUBBLE_X,     BUBBLE_Y + 22,   // base bottom (30, 40)
-                       WHITE);
+  panel_.fillTriangle(BUBBLE_X - 3, BUBBLE_Y + 18,   // tip (27, 36)
+                      BUBBLE_X,     BUBBLE_Y + 14,   // base top (30, 32)
+                      BUBBLE_X,     BUBBLE_Y + 22,   // base bottom (30, 40)
+                      WHITE);
 
   if (count > BUBBLE_VISIBLE_LINES) count = BUBBLE_VISIBLE_LINES;
   for (int i = 0; i < count; i++) {
-    display.setCursor(BUBBLE_X + 3, BUBBLE_Y + 3 + 8 * i);
-    display.print(lines[i]);
+    panel_.setCursor(BUBBLE_X + 3, BUBBLE_Y + 3 + 8 * i);
+    panel_.print(lines[i]);
   }
 }
 

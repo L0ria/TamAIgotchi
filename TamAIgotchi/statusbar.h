@@ -25,20 +25,33 @@
 //                             panel push) - called by displayMgr.render()
 //                             (issue #35, step 5) on every frame
 //
-// The shared `display` object is referenced via extern, the same pattern
-// as the other modules (bubble.cpp / text_utils.cpp / alien.cpp /
-// recorder.cpp / display.cpp).
+// The panel is a constructor-injected reference (issue #52, step 9 of 11
+// of the refactoring plan in #42: the `extern Adafruit_SSD1306` in
+// statusbar.cpp is gone - the same pattern as the Display class, issue
+// #51, step 8).
 #pragma once
 
 #include <Arduino.h>  // String (complete type: the stored lines l1_/l2_ are
 // String members - unlike Bubble, which stores a char table)
 #include "config.h"  // STATUS_CHARS_PER_LINE
 
+class Adafruit_SSD1306;  // forward declaration (complete type via
+// <Adafruit_SSD1306.h> in statusbar.cpp - the same pattern as display.h,
+// finding #7 in the #42 audit)
+
 // The status-bar widget: the two stored status lines + rendering (see the
 // header note for the API). The stored lines (l1_ / l2_) are private;
 // line1() / line2() / lineCount() expose them read-only.
 class StatusBar {
  public:
+  // issue #52, step 9 of 11 of the refactoring plan in #42: the panel is
+  // a constructor-injected reference (the `extern Adafruit_SSD1306` in
+  // statusbar.cpp is gone - the same pattern as the Display class,
+  // issue #51, step 8). The panel is sketch-lifetime (a member of the
+  // shared `hw` object, hardware.cpp), so the reference is valid for the
+  // whole program. Defined in statusbar.cpp, where the type is complete.
+  StatusBar(Adafruit_SSD1306& panel);
+
   // Render the two status lines (y=0 / y=8), mirror both to Serial, then
   // push the full frame through the single render pass displayMgr.render()
   // (issue #35, step 5). Each line is truncated to STATUS_CHARS_PER_LINE
@@ -73,6 +86,9 @@ class StatusBar {
   const String& line2() const;
 
  private:
+  // The panel (constructor-injected reference, issue #52, step 9).
+  Adafruit_SSD1306& panel_;
+
   String l1_;
   String l2_;
 
@@ -81,8 +97,9 @@ class StatusBar {
   static String fit(const String& s);
 
   // Blank the two status lines (top 16 px of the 128x64 panel) without
-  // touching the rest of the frame.
-  static void blank();
+  // touching the rest of the frame. (A member function since issue #52,
+  // step 9: it draws on the constructor-injected panel.)
+  void blank();
 };
 
 // The shared status-bar object (the codebase's existing shared-object
