@@ -22,8 +22,9 @@ extern RecState recState;
 // Display constructor (issue #51, step 8 of 11 of the refactoring plan in
 // #42): the six dependencies are injected by reference - the free-function
 // externs are gone. The objects are all sketch-lifetime (defined in
-// hardware.h / TamAIgotchi.ino), so the references are valid for the whole
-// program.
+// hardware.cpp / TamAIgotchi.ino - issue #52, step 9: the panel / WiFi
+// objects are members of the shared `hw` Hardware object), so the
+// references are valid for the whole program.
 // ---------------------------------------------------------------------------
 Display::Display(Adafruit_SSD1306& panel, StatusBar& status, AlienAnimation& alien,
                  Bubble& bubble, ESPWifiConfig& wifi, Recorder& rec, Led& led)

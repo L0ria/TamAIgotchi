@@ -17,15 +17,17 @@
 // shim records the draw calls the render assertions use, and the Serial
 // shim's capture buffer is what the mirror-to-Serial assertions read.
 #include "test_main.h"
+#include "hardware.h"  // hw (the shared Hardware object, issue #52, step 9)
 #include <Arduino.h>
 
 #include <string>
 #include <Adafruit_SSD1306.h>
 #include "statusbar.h"
 
-// The shared display object (defined in tests/test_main.cpp for the host
-// build); the render assertions read the SSD1306 shim's recorded counters.
-extern Adafruit_SSD1306 display;
+// The shared panel object (a member of the shared `hw` Hardware object,
+// defined in tests/test_main.cpp for the host build - issue #52, step 9);
+// the render assertions read the SSD1306 shim's recorded counters.
+extern Hardware hw;
 
 // Helper: a string of exactly `n` distinct chars ("abcdefghijklmnopqrstuvwxyz...").
 static std::string letters(int n) {
@@ -123,20 +125,20 @@ TEST(statusbar_clear_blanks_both_lines) {
 
 TEST(statusbar_draw_renders_stored_lines) {
   statusBar.show(String("stored one"), String("stored two"));
-  display.reset();
+  hw.panel().reset();
   statusBar.draw();
-  CHECK_EQ_INT(display.fill_rects, 1);  // the top-16px blank
-  CHECK(display.recorded.find("stored one") != std::string::npos);
-  CHECK(display.recorded.find("stored two") != std::string::npos);
-  CHECK_EQ_INT(display.frames, 0);      // no display() of its own
-  CHECK_EQ_INT(display.cleared, 0);     // no clearDisplay() of its own
+  CHECK_EQ_INT(hw.panel().fill_rects, 1);  // the top-16px blank
+  CHECK(hw.panel().recorded.find("stored one") != std::string::npos);
+  CHECK(hw.panel().recorded.find("stored two") != std::string::npos);
+  CHECK_EQ_INT(hw.panel().frames, 0);      // no display() of its own
+  CHECK_EQ_INT(hw.panel().cleared, 0);     // no clearDisplay() of its own
 }
 
 TEST(statusbar_draw_empty_state_still_blanks) {
   statusBar.clear();
-  display.reset();
+  hw.panel().reset();
   statusBar.draw();
-  CHECK_EQ_INT(display.fill_rects, 1);  // blank even with no stored content
-  CHECK_EQ_INT(display.frames, 0);
-  CHECK_EQ_INT(display.cleared, 0);
+  CHECK_EQ_INT(hw.panel().fill_rects, 1);  // blank even with no stored content
+  CHECK_EQ_INT(hw.panel().frames, 0);
+  CHECK_EQ_INT(hw.panel().cleared, 0);
 }

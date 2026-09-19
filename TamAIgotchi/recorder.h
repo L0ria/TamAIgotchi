@@ -15,18 +15,23 @@
 // PRIVATE (issue #49): loop() and display.cpp no longer touch it - they
 // use the streaming API above instead.
 //
-// The `chat` / `audio` OpenAI clients and alien.markActivity() are declared
-// in TamAIgotchi.ino and referenced via extern (see recorder.cpp). Status
-// + bubble rendering goes through statusbar.{h,cpp} (statusBar.show /
-// statusBar.error, issue #46, step 3) and bubble.{h,cpp} (bubble.setText/bubble.render - the
+// The `chat` / `audio` OpenAI clients are constructor-injected references
+// (issue #52, step 9 of 11 of the refactoring plan in #42: the externs in
+// recorder.cpp are gone - the same pattern as the Display class, issue #51,
+// step 8). alien.markActivity() is the shared `alien` object (TamAIgotchi.ino,
+// referenced via extern - the shared-object pattern). Status + bubble
+// rendering goes through statusbar.{h,cpp} (statusBar.show / statusBar.error,
+// issue #46, step 3) and bubble.{h,cpp} (bubble.setText/bubble.render - the
 // prompt text, issue #33, and the response text, issue #34, step 4), which
-// use the shared `display` object.
+// use the shared panel (hw.panel(), issue #52, step 9).
 #pragma once
 #include <cstddef>  // size_t
 #include <cstdint>  // uint8_t
 #include "config.h"  // MAX_REC_SECONDS, REC_SAFETY_MARGIN_KB
 
 class String;  // forward declaration (complete type via <Arduino.h> in the .cpp)
+class OpenAI_ChatCompletion;       // forward declaration (complete type via <OpenAI.h> in the .cpp)
+class OpenAI_AudioTranscription;   // forward declaration (complete type via <OpenAI.h> in the .cpp)
 
 // App state machine (issue #9 + #13). Owned by the sketch (TamAIgotchi.ino)
 // and shared with the recorder via extern; declared here so both TUs agree.
@@ -34,6 +39,16 @@ enum RecState { IDLE, RECORDING, SENDING, RESPONSE };
 
 class Recorder {
  public:
+  // issue #52, step 9 of 11 of the refactoring plan in #42: the OpenAI
+  // clients are constructor-injected references (the `extern
+  // OpenAI_ChatCompletion` / `extern OpenAI_AudioTranscription` in
+  // recorder.cpp are gone - the same pattern as the Display class,
+  // issue #51, step 8). The clients are sketch-lifetime (members of the
+  // shared `hw` object, hardware.cpp), so the references are valid for
+  // the whole program. Defined in recorder.cpp, where the types are
+  // complete.
+  Recorder(OpenAI_ChatCompletion& chat, OpenAI_AudioTranscription& audio);
+
   // Allocate the recording buffer once (PSRAM) + write the 44-byte PCM WAV
   // header with placeholder sizes. Returns true on success; on failure the
   // error is shown on the display (no fallback to the old fixed 5 s take).
@@ -74,6 +89,12 @@ class Recorder {
   void textGeneration(const String& prompt);
 
  private:
+  // The OpenAI clients (constructor-injected references, issue #52, step 9
+  // of 11 of the refactoring plan in #42 - the externs in recorder.cpp are
+  // gone).
+  OpenAI_ChatCompletion& chat_;
+  OpenAI_AudioTranscription& audio_;
+
   // The preallocated buffer + take state (private since issue #49; the
   // streaming API above is the only access from outside this class).
   uint8_t *rec_buf = NULL;

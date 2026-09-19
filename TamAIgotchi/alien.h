@@ -4,6 +4,10 @@
 #pragma once
 #include <stdint.h>
 
+class Adafruit_SSD1306;  // forward declaration (complete type via
+// <Adafruit_SSD1306.h> in alien.cpp - the same pattern as display.h,
+// finding #7 in the #42 audit)
+
 #define ALIEN_SPRITE_W 24
 #define ALIEN_SPRITE_H 22
 
@@ -65,8 +69,10 @@ static const uint8_t* const alienFrameData[4] = {
 //   alien.update()        - once per loop() pass (starts on idle timeout +
 //                           advances the 70 s loop)
 //
-// The shared `display` object is referenced via extern (see alien.cpp).
-// canAnimate() and update() take their inputs as parameters (issue #50,
+// The panel is a constructor-injected reference (issue #52, step 9 of 11
+// of the refactoring plan in #42: the `extern Adafruit_SSD1306` in
+// alien.cpp is gone - the same pattern as the Display class, issue #51,
+// step 8). canAnimate() and update() take their inputs as parameters (issue #50,
 // step 7 of 11 of the refactoring plan in #42) - the alien no longer
 // knows about the recorder or the WiFi library.
 // ---------------------------------------------------------------------------
@@ -76,6 +82,14 @@ enum AlienState { ANIM_IDLE, ANIM_ACTIVE };
 
 class AlienAnimation {
  public:
+  // issue #52, step 9 of 11 of the refactoring plan in #42: the panel is
+  // a constructor-injected reference (the `extern Adafruit_SSD1306` in
+  // alien.cpp is gone - the same pattern as the Display class, issue #51,
+  // step 8). The panel is sketch-lifetime (a member of the shared `hw`
+  // object, hardware.cpp), so the reference is valid for the whole
+  // program. Defined in alien.cpp, where the type is complete.
+  explicit AlienAnimation(Adafruit_SSD1306& panel);
+
   // Any button press is activity: it stops the animation and restarts the
   // inactivity timers (both the idle start and the response auto-return).
   void markActivity();
@@ -132,6 +146,9 @@ class AlienAnimation {
   void renderBubble();
 
  private:
+  // The panel (constructor-injected reference, issue #52, step 9).
+  Adafruit_SSD1306& panel_;
+
   // Draw one alien sprite at (x, y) using the Adafruit_GFX 1-bit format.
   void renderAlien(int frame, int x, int y);
   // Render the current animation scene: push one full frame through

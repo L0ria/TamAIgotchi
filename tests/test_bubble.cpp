@@ -16,6 +16,7 @@
 // build's equivalent of the instance in TamAIgotchi.ino); the SSD1306 shim
 // records the draw calls the render assertions use.
 #include "test_main.h"
+#include "hardware.h"  // hw (the shared Hardware object, issue #52, step 9)
 #include <Arduino.h>
 
 #include <string>
@@ -27,9 +28,10 @@
 // step 8 (issue #51) so display.cpp's `bubble_` reference links.
 extern Bubble bubble;
 
-// The shared display object (defined in tests/test_main.cpp for the host
-// build); the render assertions read the SSD1306 shim's recorded counters.
-extern Adafruit_SSD1306 display;
+// The shared panel object (a member of the shared `hw` Hardware object,
+// defined in tests/test_main.cpp for the host build - issue #52, step 9);
+// the render assertions read the SSD1306 shim's recorded counters.
+extern Hardware hw;
 
 // Helper: a text of `n` distinct words of `len` chars each ("aaaa bbbb ...").
 // At BUBBLE_CHARS_PER_LINE = 15, two 7-char words fit one line, three do
@@ -138,12 +140,12 @@ TEST(bubble_renderText_does_not_touch_stored_table) {
 
   // The idle-animation path: a transient text (and the empty bubble) must
   // not modify the stored table (issue #35 step 5 follow-up, Q4).
-  display.reset();
+  hw.panel().reset();
   bubble.renderText("transient idle hello");
   CHECK_EQ_INT(bubble.lineCount(), countBefore);
   CHECK_EQ_INT(bubble.scrollOffset(), offsetBefore);
 
-  display.reset();
+  hw.panel().reset();
   bubble.renderText(NULL);  // empty bubble phase
   CHECK_EQ_INT(bubble.lineCount(), countBefore);
   CHECK_EQ_INT(bubble.scrollOffset(), offsetBefore);
@@ -153,32 +155,32 @@ TEST(bubble_renderText_does_not_touch_stored_table) {
 
 TEST(bubble_render_draws_frame_without_display_pass) {
   bubble.setText(String(words(10, 7).c_str()));  // 5 lines, all visible
-  display.reset();
+  hw.panel().reset();
   bubble.render();
-  CHECK_EQ_INT(display.draw_rects, 1);      // the bubble rectangle
-  CHECK_EQ_INT(display.fill_rects, 1);      // the interior clear
-  CHECK_EQ_INT(display.triangles, 1);       // the tail
-  CHECK_EQ_INT(display.frames, 0);          // no display() of its own
-  CHECK_EQ_INT(display.cleared, 0);         // no clearDisplay() of its own
+  CHECK_EQ_INT(hw.panel().draw_rects, 1);      // the bubble rectangle
+  CHECK_EQ_INT(hw.panel().fill_rects, 1);      // the interior clear
+  CHECK_EQ_INT(hw.panel().triangles, 1);       // the tail
+  CHECK_EQ_INT(hw.panel().frames, 0);          // no display() of its own
+  CHECK_EQ_INT(hw.panel().cleared, 0);         // no clearDisplay() of its own
 }
 
 TEST(bubble_render_empty_still_draws_frame) {
   bubble.clear();
-  display.reset();
+  hw.panel().reset();
   bubble.render();
-  CHECK_EQ_INT(display.draw_rects, 1);  // always the same size, always drawn
-  CHECK_EQ_INT(display.frames, 0);
+  CHECK_EQ_INT(hw.panel().draw_rects, 1);  // always the same size, always drawn
+  CHECK_EQ_INT(hw.panel().frames, 0);
 }
 
 TEST(bubble_render_scrolled_window_draws_visible_lines) {
   bubble.setText(String(words(20, 7).c_str()));  // 10 lines
   bubble.jumpTo(true);                            // window = lines 6..10
-  display.reset();
+  hw.panel().reset();
   bubble.render();
   // The visible window (lines 6..10) is printed, not the whole table:
   // the last line's word ("ttttttt") is drawn, the first line's word
   // ("aaaaaaa") is not.
-  CHECK(display.recorded.find("ttttttt") != std::string::npos);
-  CHECK(display.recorded.find("aaaaaaa") == std::string::npos);
-  CHECK_EQ_INT(display.frames, 0);
+  CHECK(hw.panel().recorded.find("ttttttt") != std::string::npos);
+  CHECK(hw.panel().recorded.find("aaaaaaa") == std::string::npos);
+  CHECK_EQ_INT(hw.panel().frames, 0);
 }

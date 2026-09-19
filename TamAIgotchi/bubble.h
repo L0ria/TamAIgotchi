@@ -28,9 +28,10 @@
 // left edge points toward the alien (issue #29 Q9, cosmetic).
 //
 // The bubble owns its own static line table (BUBBLE_MAX_LINES x 16 B =
-// 1 KB of static RAM) - no globals in the sketch. The shared `display`
-// object is referenced via extern, the same pattern as the other modules
-// (text_utils.cpp / alien.cpp / recorder.cpp / display.cpp).
+// 1 KB of static RAM) - no globals in the sketch. The panel is a
+// constructor-injected reference (issue #52, step 9 of 11 of the
+// refactoring plan in #42: the `extern Adafruit_SSD1306` in bubble.cpp is
+// gone - the same pattern as the Display class, issue #51, step 8).
 //
 // bubble.render() does NOT clearDisplay() or display() on its own - the
 // single render pass (one clearDisplay() + one display() per frame) is
@@ -41,6 +42,9 @@
 #include "config.h"  // BUBBLE_* geometry + table size
 
 class String;  // forward declaration (complete type via <Arduino.h> in the .cpp)
+class Adafruit_SSD1306;  // forward declaration (complete type via
+// <Adafruit_SSD1306.h> in bubble.cpp - the same pattern as display.h,
+// finding #7 in the #42 audit)
 
 // The speech-bubble widget: word-wrapped text table + scrolling + rendering
 // (see the header note for the API). The state (lines_ / count_ / offset_)
@@ -48,6 +52,14 @@ class String;  // forward declaration (complete type via <Arduino.h> in the .cpp
 // all instances (there is one - the shared `bubble` object).
 class Bubble {
  public:
+  // issue #52, step 9 of 11 of the refactoring plan in #42: the panel is
+  // a constructor-injected reference (the `extern Adafruit_SSD1306` in
+  // bubble.cpp is gone - the same pattern as the Display class, issue
+  // #51, step 8). The panel is sketch-lifetime (a member of the shared
+  // `hw` object, hardware.cpp), so the reference is valid for the whole
+  // program. Defined in bubble.cpp, where the type is complete.
+  explicit Bubble(Adafruit_SSD1306& panel);
+
   // Word-wrap `text` into the static 64-line table at
   // BUBBLE_CHARS_PER_LINE chars/line (via the width-parameterized
   // wrapText()) and reset the scroll offset to 0. Lines beyond
@@ -92,6 +104,9 @@ class Bubble {
   void renderText(const char* text);
 
  private:
+  // The panel (constructor-injected reference, issue #52, step 9).
+  Adafruit_SSD1306& panel_;
+
   // The static line table (BUBBLE_MAX_LINES x 16 B = 1 KB of static RAM,
   // issue #29 Q7) - one definition, shared by all instances.
   static char lines_[BUBBLE_MAX_LINES][BUBBLE_CHARS_PER_LINE + 1];
@@ -103,7 +118,9 @@ class Bubble {
   // into the current frame. Shared by render() (the stored table window)
   // and renderText() (a transient text, table untouched). `lines` is a
   // pointer to the first row of a [..][BUBBLE_CHARS_PER_LINE + 1] table.
-  static void drawFrame(char (*lines)[BUBBLE_CHARS_PER_LINE + 1], int count);
+  // (A member function since issue #52, step 9: it draws on the
+  // constructor-injected panel.)
+  void drawFrame(char (*lines)[BUBBLE_CHARS_PER_LINE + 1], int count);
 };
 
 // The shared bubble object (the codebase's existing shared-object pattern;
