@@ -6,7 +6,7 @@
 #include <Arduino.h>  // millis(), Serial, F()
 #include <Adafruit_SSD1306.h>  // for the shared `display` object
 #include "bubble.h"     // bubble.renderText() (issue #35, step 5 follow-up)
-#include "display.h"    // renderScreen() (issue #35, step 5: the single pass)
+#include "display.h"    // displayMgr.render() (issue #51, step 8: the single pass)
 
 // Shared object declared in hardware.h (the sketch's hardware init);
 // referenced here instead of passed through every call. (issue #50, step 7
@@ -45,7 +45,7 @@ void AlienAnimation::renderAlien(int frame, int x, int y) {
 // to the left of the bubble (x 30..126, y 18..62). The alien is present in
 // EVERY app state: the stand frame when the animation is not running, the
 // current animation frame while it is (drawSprite() is called by
-// renderScreen() on every frame).
+// displayMgr.render() on every frame).
 void AlienAnimation::drawSprite() {
   int frame = (alienState == ANIM_ACTIVE) ? alienFrame : ALIEN_FRAME_STAND;
   renderAlien(frame, 4, 42);
@@ -57,7 +57,7 @@ void AlienAnimation::drawSprite() {
 // (0 / 2) show MSG_ALIEN_BUBBLE (issue #29 Q8: the bubble is always the
 // same size - no small bubble, no popping rectangle), the wave phases
 // (1 / 3) and the stand phase (4) show an empty bubble. Called by
-// renderScreen() (display.cpp) while the animation is running.
+// displayMgr.render() (display.cpp) while the animation is running.
 void AlienAnimation::renderBubble() {
   if (alienPhase == 0 || alienPhase == 2) {
     bubble.renderText(MSG_ALIEN_BUBBLE);
@@ -69,11 +69,11 @@ void AlienAnimation::renderBubble() {
 // Render the current animation scene (issue #35, step 5 of 6 of the UI
 // restructure in #29): the animation no longer draws its own frame and no
 // longer touches the bubble's line table - it only pushes one full frame
-// through the single render pass renderScreen() (the sprite frame is drawn
-// by drawSprite(), the bubble content by renderBubble(), both from
-// renderScreen()).
+// through the single render pass displayMgr.render() (the sprite frame is
+// drawn by drawSprite(), the bubble content by renderBubble(), both from
+// displayMgr.render()).
 void AlienAnimation::renderAlienScene() {
-  renderScreen();
+  displayMgr.render();
 }
 
 void AlienAnimation::start() {

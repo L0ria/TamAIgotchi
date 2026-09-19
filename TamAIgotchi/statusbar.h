@@ -16,13 +16,13 @@
 //   statusBar.show(l1, l2)  - the two status lines (y=0 / y=8), each
 //                             truncated to STATUS_CHARS_PER_LINE, both
 //                             mirrored to Serial, then the single render
-//                             pass renderScreen() (issue #35, step 5)
+//                             pass displayMgr.render() (issue #51, step 8)
 //   statusBar.error(title, detail) - 2-line error form: line 1 = title,
 //                             line 2 = detail (truncated); the FULL title
 //                             + detail always go to Serial
-//   statusBar.clear()       - blank the two lines + renderScreen()
+//   statusBar.clear()       - blank the two lines + displayMgr.render()
 //   statusBar.draw()        - redraw the two stored lines (no Serial, no
-//                             panel push) - called by renderScreen()
+//                             panel push) - called by displayMgr.render()
 //                             (issue #35, step 5) on every frame
 //
 // The shared `display` object is referenced via extern, the same pattern
@@ -40,7 +40,7 @@
 class StatusBar {
  public:
   // Render the two status lines (y=0 / y=8), mirror both to Serial, then
-  // push the full frame through the single render pass renderScreen()
+  // push the full frame through the single render pass displayMgr.render()
   // (issue #35, step 5). Each line is truncated to STATUS_CHARS_PER_LINE
   // (21 chars) - the two lines are blanked (not cleared) first, so the
   // rest of the frame (alien / bubble) is preserved. The 1-arg overload
@@ -61,7 +61,7 @@ class StatusBar {
 
   // Draw the two stored status lines at the top of the screen (line 1 at
   // y=0, line 2 at y=8) into the current frame. No Serial, no panel push -
-  // called by renderScreen() (issue #35, step 5) on every frame.
+  // called by displayMgr.render() (issue #51, step 8) on every frame.
   void draw();
 
   // Number of stored lines in use (1 = line 1 only, 2 = both lines,

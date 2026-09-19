@@ -98,7 +98,7 @@ void Bubble::drawFrame(char (*lines)[BUBBLE_CHARS_PER_LINE + 1], int count) {
 // Draw the bubble rectangle (always, even when empty) + the tail triangle
 // + the visible BUBBLE_VISIBLE_LINES window of the table into the current
 // frame. No clearDisplay() / display() of its own (the single render pass
-// is renderScreen() in display.cpp; it issues display.display()).
+// is displayMgr.render() in display.cpp; it issues display.display()).
 void Bubble::render() {
   // The visible window of the table (BUBBLE_VISIBLE_LINES lines), starting
   // at scrollOffset.

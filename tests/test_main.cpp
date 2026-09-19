@@ -69,11 +69,39 @@ AlienAnimation alien;
 // The ESP object (Arduino.h shim) - defined here so the extern links.
 EspClass ESP;
 
-// Host stub for the single render pass (display.cpp, step 8 of 11): the
-// modules' show()/clear() call it; the host build has no display.cpp, so
-// it is a no-op here (the tests assert on the stored state + the SSD1306
-// shim's recorded draw calls, not on the frame push).
-void renderScreen() {}
+// The WiFi SSID backing store (tests/shims/WiFi.h) - driven by
+// host_set_wifi_ssid() so Display::showWifiStatus()'s STA branch is testable.
+#include <WiFi.h>
+String host_wifi_ssid;
+
+// The shared WiFi-config object (hardware.h on the device; the host build
+// defines it here so display.cpp's `wifi_` reference + showWifiStatus()
+// link) - the same shared-object pattern as `display` / `statusBar`.
+#include <ESPWifiConfig.h>
+#include "config.h"  // WIFI_AP_NAME, WIFI_SETUP_PORT
+ESPWifiConfig wifiConfig(WIFI_AP_NAME, WIFI_SETUP_PORT, -1, false, "", "", true);
+
+// The shared WiFi object (tests/shims/WiFi.h) - defined here so the extern links.
+WiFiClass WiFi;
+
+// The shared bubble object (TamAIgotchi.ino on the device; the host build
+// defines it here so display.cpp's `bubble_` reference + the modules'
+// `extern Bubble bubble;` link) - moved from test_bubble.cpp in step 8
+// (issue #51): display.cpp now reaches `bubble` through the Display class,
+// so the shared object lives with the other shared objects.
+#include "bubble.h"
+Bubble bubble;
+
+// The shared display-manager object (TamAIgotchi.ino on the device; the
+// host build defines it here so the modules' `extern Display displayMgr;`
+// links). Constructed AFTER the six objects it references (display /
+// statusBar / alien / bubble / wifiConfig / recorder / led) - the same
+// shared-object pattern as the device (issue #51, step 8 of 11 of the
+// refactoring plan in #42). display.cpp is compiled into the host build
+// (added to run_tests.sh), so the single render pass is now real and the
+// tests can assert on the SSD1306 shim's frames / cleared counters.
+#include "display.h"
+Display displayMgr(display, statusBar, alien, bubble, wifiConfig, recorder, led);
 
 void host_set_pin(int pin, int level) {
   if (pin >= 0 && pin < 64) host_pin_level[pin] = level;

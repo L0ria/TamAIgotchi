@@ -8,7 +8,7 @@
 #include "statusbar.h"   // statusBar (issue #46, step 3)
 #include "bubble.h"      // bubble.setText() (prompt in the bubble, issue #33)
 #include "messages.h"    // MSG_* user-facing display strings (issue #36, step 6)
-#include "display.h"     // renderScreen() (issue #35, step 5: the single pass)
+#include "display.h"     // displayMgr.render() (issue #51, step 8: the single pass)
 
 // Shared objects + helpers declared in TamAIgotchi.ino (the sketch entry
 // point); referenced here instead of passed through every call.
@@ -198,10 +198,10 @@ void Recorder::textGeneration(const String& prompt) {
   // Status bar (issue #33, step 3 of the UI restructure in #29): the
   // "Sending prompt" line becomes a status line, and the prompt text
   // (content, #29 section 4 row 10) goes into the speech bubble (step 1
-  // module). renderScreen() pushes the full frame (issue #35, step 5).
+  // module). displayMgr.render() pushes the full frame (issue #35, step 5).
   statusBar.show(MSG_SENDING_PROMPT);
   bubble.setText(prompt);
-  renderScreen();
+  displayMgr.render();
 
   OpenAI_StringResponse result = chat.message(prompt);
   Serial.printf("Received message. Tokens: %u\n", result.tokens());
@@ -236,10 +236,10 @@ void Recorder::textGeneration(const String& prompt) {
   // owns the text table from now on; the old response table + window
   // renderer are gone). The response is content, so it
   // lives in the bubble; then the "Response 1/N" counter goes on status
-  // line 1 (issue #29 Q6). One full frame through renderScreen()
+  // line 1 (issue #29 Q6). One full frame through displayMgr.render()
   // (issue #35, step 5).
   bubble.setText(response);
-  renderScreen();
+  displayMgr.render();
   statusBar.show(MSG_RESPONSE_PREFIX "1/" + String(bubble.lineCount()));
   recState = RESPONSE;
   // Issue #16: re-arm the inactivity timer so the animation returns

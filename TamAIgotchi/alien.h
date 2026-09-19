@@ -119,7 +119,7 @@ class AlienAnimation {
   // frame: the stand frame when the animation is not running, the current
   // animation frame while it is (issue #35, step 5 of 6 of the UI restructure
   // in #29: the alien is present in EVERY app state). Called by
-  // renderScreen() (display.cpp) on every frame - no clearDisplay() /
+  // displayMgr.render() (display.cpp) on every frame - no clearDisplay() /
   // display() of its own.
   void drawSprite();
 
@@ -127,7 +127,7 @@ class AlienAnimation {
   // touching the bubble's line table (issue #35 step 5 follow-up, Q4: the
   // stored response text must survive the animation): MSG_ALIEN_BUBBLE in
   // the bubble phases (0 / 2), an empty bubble in the wave / stand phases
-  // (1 / 3 / 4). Called by renderScreen() (display.cpp) while the
+  // (1 / 3 / 4). Called by displayMgr.render() (display.cpp) while the
   // animation is running - no clearDisplay() / display() of its own.
   void renderBubble();
 
@@ -135,9 +135,9 @@ class AlienAnimation {
   // Draw one alien sprite at (x, y) using the Adafruit_GFX 1-bit format.
   void renderAlien(int frame, int x, int y);
   // Render the current animation scene: push one full frame through
-  // renderScreen() (issue #35, step 5) - the sprite frame is drawn by
+  // displayMgr.render() (issue #35, step 5) - the sprite frame is drawn by
   // drawSprite() and the bubble content by renderBubble(), both from
-  // renderScreen(), WITHOUT touching the bubble's line table (Q4).
+  // displayMgr.render(), WITHOUT touching the bubble's line table (Q4).
   void renderAlienScene();
 
   // The 6 animation state variables (moved here from the .ino globals).

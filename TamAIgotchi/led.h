@@ -2,7 +2,7 @@
 // refactoring plan in #42, issue #47).
 //
 // Owns the recording LED (LED_PIN, config.h): the raw digitalWrite()
-// calls that used to live in display.cpp::startRecording() (on) and the
+// calls that used to live in Display::startRecording() (display.cpp) (on) and the
 // RECORDING branch of TamAIgotchi.ino (off) now go through this class,
 // and the logical state (on/off) is visible in the class model.
 //

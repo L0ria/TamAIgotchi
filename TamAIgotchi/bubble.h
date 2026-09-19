@@ -34,7 +34,7 @@
 //
 // bubble.render() does NOT clearDisplay() or display() on its own - the
 // single render pass (one clearDisplay() + one display() per frame) is
-// issued by renderScreen() (display.cpp). It may be called after the
+// issued by displayMgr.render() (display.cpp). It may be called after the
 // caller has drawn the rest of the scene.
 #pragma once
 

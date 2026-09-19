@@ -4,7 +4,7 @@
 #include "statusbar.h"
 #include <Arduino.h>  // String, Serial, F()
 #include <Adafruit_SSD1306.h>  // for the shared `display` object
-#include "display.h"   // renderScreen() (issue #35, step 5: the single pass)
+#include "display.h"   // displayMgr.render() (issue #51, step 8: the single pass)
 
 // The `display` object is defined in hardware.h (included by the sketch);
 // reference it here instead of passing it through every call - the same
@@ -26,7 +26,7 @@ void StatusBar::blank() {
 }
 
 // Draw the two status lines (y=0 / y=8) from the stored state into the
-// current frame. No display.display() - renderScreen() owns the panel push
+// current frame. No display.display() - displayMgr.render() owns the panel push
 // (issue #35, step 5 of 6 of the UI restructure in #29).
 void StatusBar::draw() {
   blank();
@@ -41,10 +41,10 @@ void StatusBar::draw() {
 }
 
 // Render the two status lines (y=0 / y=8), mirror both to Serial, then
-// push the full frame through the single render pass (renderScreen(),
-// issue #35, step 5). Each line is truncated to STATUS_CHARS_PER_LINE
+// push the full frame through the single render pass
+// (displayMgr.render(), issue #51, step 8). Each line is truncated to STATUS_CHARS_PER_LINE
 // (21 chars); the two lines are blanked (not cleared) first, so the rest
-// of the frame (alien / bubble) is preserved by renderScreen().
+// of the frame (alien / bubble) is preserved by displayMgr.render().
 void StatusBar::show(const String& l1, const String& l2) {
   String a = fit(l1);
   String b = fit(l2);
@@ -53,7 +53,7 @@ void StatusBar::show(const String& l1, const String& l2) {
 
   l1_ = a;
   l2_ = b;
-  renderScreen();
+  displayMgr.render();
 }
 
 // 1-arg form: line 2 empty.
@@ -78,7 +78,7 @@ void StatusBar::error(const String& title, const String& detail) {
 void StatusBar::clear() {
   l1_ = "";
   l2_ = "";
-  renderScreen();
+  displayMgr.render();
 }
 
 int StatusBar::lineCount() const {

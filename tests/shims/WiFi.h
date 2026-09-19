@@ -8,9 +8,15 @@
 
 #include <Arduino.h>  // String
 
+// The connected network's SSID. On the host build the WiFi behavior is NOT
+// emulated; this returns the value the tests set with setSSID() so
+// Display::showWifiStatus()'s STA branch is testable.
+extern String host_wifi_ssid;
+inline void host_set_wifi_ssid(const char* ssid) { host_wifi_ssid = String(ssid ? ssid : ""); }
+
 class WiFiClass {
  public:
-  String SSID() { return String(); }
+  String SSID() { return host_wifi_ssid; }
 };
 
 extern WiFiClass WiFi;

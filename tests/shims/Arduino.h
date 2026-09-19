@@ -59,6 +59,11 @@ inline void pinMode(int pin, int mode) { (void)pin; (void)mode; }  // no-op on h
 // Test hook: drive a pin to a level (defined in tests/test_main.cpp).
 void host_set_pin(int pin, int level);
 
+// delay(): the firmware uses it in Display::resetWifiSettingsAndRestart()
+// (a 300 ms settle before the reboot). On the host it is a no-op (the
+// reboot itself is counted by the ESP shim's restarted() hook).
+inline void delay(unsigned long ms) { (void)ms; }
+
 // ---------------------------------------------------------------------------
 // String: the subset of the Arduino String API the firmware modules use.
 // Arduino semantics kept where they differ from std::string, notably
@@ -167,12 +172,14 @@ class SerialClass {
   size_t print(const char* s) { return write(s ? s : ""); }
   size_t print(const String& s) { return write(s.c_str()); }
   size_t print(char c) { return write(std::string(1, c)); }
+  size_t print(int v) { char b[24]; std::snprintf(b, sizeof b, "%d", v); return write(b); }
   size_t print(unsigned long v) { char b[24]; std::snprintf(b, sizeof b, "%lu", v); return write(b); }
 
   size_t println() { return write("\n"); }
   size_t println(const char* s) { return print(s) + write("\n"); }
   size_t println(const String& s) { return print(s) + write("\n"); }
   size_t println(char c) { return print(c) + write("\n"); }
+  size_t println(int v) { return print(v) + write("\n"); }
   size_t println(unsigned long v) { char b[24]; std::snprintf(b, sizeof b, "%lu", v); return write(b) + write("\n"); }
 
   // printf: format + (up to 3) args, mirrored to the capture buffer. The
