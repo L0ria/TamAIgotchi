@@ -31,6 +31,7 @@ MODULES=(
   TamAIgotchi/recorder.cpp
   TamAIgotchi/alien.cpp
   TamAIgotchi/display.cpp
+  TamAIgotchi/app.cpp
 )
 
 # Test files (one per module, plus the harness).
@@ -44,6 +45,7 @@ TESTS=(
   tests/test_recorder.cpp
   tests/test_alien.cpp
   tests/test_display.cpp
+  tests/test_app.cpp
 )
 
 echo "[run_tests] compiling: ${MODULES[*]}"

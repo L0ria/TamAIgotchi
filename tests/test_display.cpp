@@ -27,6 +27,7 @@
 #include <ESPWifiConfig.h>  // ESPWifiConfig + STA_MODE / AP_MODE
 #include "display.h"        // Display
 #include "recorder.h"       // Recorder
+#include "app.h"            // App (the app state machine, issue #53, step 10)
 #include "statusbar.h"      // StatusBar
 #include "bubble.h"         // Bubble
 #include "alien.h"          // AlienAnimation
@@ -40,9 +41,10 @@
 extern Hardware hw;
 // The shared display manager (defined in tests/test_main.cpp).
 extern Display displayMgr;
-// The app state machine (defined in tests/test_main.cpp) - startRecording()
-// sets it to RECORDING on success.
-extern RecState recState;
+// The shared app object (defined in tests/test_main.cpp) - issue #53,
+// step 10 of 11 of the refactoring plan in #42: the app state machine that
+// used to be the `recState` global is now owned by the App class.
+extern App app;
 
 // A set of LOCAL Display dependencies with a controlled WiFi / buffer / LED
 // state. `d` is constructed LAST (declaration order) so it can hold
@@ -101,13 +103,12 @@ TEST(startRecording_buffer_not_allocated_returns_false) {
   // WiFi connected, so the ONLY failure is the missing buffer.
   deps.wifi.ESP_mode = STA_MODE;
   deps.wifi.wifi_connected = true;
-  recState = IDLE;
   deps.led.off();
 
   bool ok = deps.d.startRecording();
 
   CHECK(!ok);                 // returns false
-  CHECK(recState != RECORDING); // no RECORDING state
+  CHECK(app.state() != RECORDING); // no RECORDING state
   CHECK(!deps.led.isOn());     // no LED on
 }
 
@@ -120,13 +121,12 @@ TEST(startRecording_wifi_not_connected_returns_false) {
   CHECK(deps.rec.bufferAllocated());
   deps.wifi.ESP_mode = STA_MODE;
   deps.wifi.wifi_connected = false;
-  recState = IDLE;
   deps.led.off();
 
   bool ok = deps.d.startRecording();
 
   CHECK(!ok);                 // returns false
-  CHECK(recState != RECORDING); // no RECORDING state
+  CHECK(app.state() != RECORDING); // no RECORDING state
   CHECK(!deps.led.isOn());     // no LED on
   // showWifiStatus() was called: with STA mode + not connected it shows the
   // "Connecting to WiFi..." status line (the AP / connection status screen).
@@ -142,7 +142,6 @@ TEST(startRecording_wifi_connected_buffer_ok_returns_true) {
   CHECK(deps.rec.bufferAllocated());
   deps.wifi.ESP_mode = STA_MODE;
   deps.wifi.wifi_connected = true;
-  recState = IDLE;
   deps.led.off();
 
   // Pre-set the take position to non-zero so the reset by beginStreaming()
@@ -153,7 +152,8 @@ TEST(startRecording_wifi_connected_buffer_ok_returns_true) {
   bool ok = deps.d.startRecording();
 
   CHECK(ok);                    // returns true
-  CHECK(recState == RECORDING); // RECORDING state set
+  CHECK(app.state() != RECORDING); // issue #53, step 10: Display no longer
+                                   // sets the app state (App owns it)
   CHECK(deps.led.isOn());       // LED on
   CHECK_EQ_INT(0, deps.rec.recordedBytes()); // beginStreaming() reset the position
   // The "Recording (max 10 s)" status line is set (overwrites the WiFi line

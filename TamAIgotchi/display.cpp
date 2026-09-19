@@ -13,11 +13,6 @@
 #include "bubble.h"      // bubble.clear() / bubble.render() (issue #34, step 4)
 #include "led.h"       // led.on() (issue #47, step 4)
 
-// The app state machine (TamAIgotchi.ino on the device; the host build
-// defines it in test_main.cpp). startRecording() switches it to RECORDING
-// on success (issue #51, step 8 of 11 of the refactoring plan in #42).
-extern RecState recState;
-
 // ---------------------------------------------------------------------------
 // Display constructor (issue #51, step 8 of 11 of the refactoring plan in
 // #42): the six dependencies are injected by reference - the free-function
@@ -124,7 +119,6 @@ bool Display::startRecording() {
     bubble_.clear();
     showWifiStatus(); // status lines + render() (issue #35, step 5)
     rec_.beginStreaming();
-    recState = RECORDING;
     led_.on();  // recording LED (issue #47, step 4)
     // Status bar (issue #33, step 3 of the UI restructure in #29): line 1
     // = "Recording (max 10 s)" (20 chars, fits the 21-char limit); line 2
