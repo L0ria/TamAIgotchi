@@ -135,11 +135,42 @@ The stock ESP-Wifi-Config truncates WiFi passwords to 30 characters, so this pro
 - Select the correct ESP32 board in the Arduino IDE
 - Click the Compile and Upload button
 
+## Code structure
+
+The code is fully class-based (the refactoring in #42). Each class lives in
+its own `TamAIgotchi/<name>.h/.cpp` pair; `TamAIgotchi.ino` is the app shell
+(`setup()` + `loop()` + the object wiring):
+
+| Class | Role |
+|---|---|
+| `App` | the IDLE / RECORDING / SENDING / RESPONSE state machine |
+| `Display` | the single render pass (`render()`) + the display-level actions |
+| `Recorder` | the PSRAM recording buffer + the record → transcribe → LLM flow |
+| `AlienAnimation` | the idle-alien animation |
+| `Bubble` | the speech bubble (stored text, scroll, rendering) |
+| `StatusBar` | the top two status lines (21 chars × 2) |
+| `Button` | the debounced buttons (`isPressed()` / `isLongPressed()` / `isHeld()`) |
+| `Led` | the recording LED |
+| `Hardware` | the shared library objects + the hardware bring-up (`init()`) |
+
+Free functions that stay free: `wrapText()` (`TamAIgotchi/text_utils.cpp`) and
+the `setup()` / `loop()` shell in `TamAIgotchi.ino`. All user-facing display
+strings live in `TamAIgotchi/messages.h`.
+
+The host-side test harness lives in `tests/` (shimmed Arduino/ESP32 headers —
+no board needed). Run it with:
+
+```bash
+bash tests/run_tests.sh
+```
+
 ## UI layout
 
-The 128×64 OLED is split into three regions. The top two lines are the status
-bar; the bottom half holds the alien (lower-left) and the speech bubble (right),
-which carries all content (prompt, response, and the idle `hello`):
+The 128×64 OLED is split into three regions, drawn by the `StatusBar`,
+`AlienAnimation` and `Bubble` classes and composed in the single
+`Display::render()` pass. The top two lines are the status bar; the bottom half
+holds the alien (lower-left) and the speech bubble (right), which carries all
+content (prompt, response, and the idle `hello`):
 
 ```
 +--------------------------------------------------+  y=0
@@ -168,6 +199,10 @@ action, it records for as long as it is held (capped at 10 s) and sends the
 take on release. The two scroll buttons are only active while the response is
 on screen. Status messages must fit 21 chars × 2 lines — longer text goes to
 the bubble or the serial log, never the display driver clipping.
+
+The buttons are `Button` class instances (`buttons.h`): `update()` once per
+loop pass, then `isPressed()` / `isLongPressed()` / `isHeld()` (debounce
+50 ms, long-press threshold 5000 ms).
 
 ## Usage
 

@@ -7,7 +7,7 @@ re-appeared when a rule was relaxed.
 
 ## Single-render-pass rule (pitfall 5)
 
-One `displayMgr.render()` per frame = **status bar + alien + bubble**, with
+One `Display::render()` per frame = **status bar + alien + bubble**, with
 exactly **one `clearDisplay()` + one `display()`**.
 
 - `Display::render()` (display.cpp) is the ONLY place that calls
@@ -65,8 +65,11 @@ lines of the 128×64 panel — `STATUS_CHARS_PER_LINE`).
   (RESPONSE state); during recording / sending they are ignored.
 - The 5 s holds keep their meaning in **every** state (the GPIO9 WiFi reset is
   checked before the state machine branches).
+- The button API is `Button::isPressed()` / `isLongPressed()` /
+  `isHeld()` (`isHeld()` is new, step 5) — `update()` is called once per
+  loop() pass for every button before reading them.
 - Debounce 50 ms, long-press threshold 5000 ms (`BUTTON_DEBOUNCE_MS` /
-  `BUTTON_LONG_PRESS_MS`).
+  `BUTTON_LONG_PRESS_MS`) — unchanged.
 
 ## Build
 
@@ -80,8 +83,9 @@ lines of the 128×64 panel — `STATUS_CHARS_PER_LINE`).
 - **Zero warnings in project code** (library warnings are acceptable but should
   be noted).
 - **Report flash/RAM sizes** vs. the previous step's baseline (expect no change,
-  or a few bytes less). The step-5 baseline is **1 224 839 B (93%) flash /
-  82 716 B (25%) RAM**.
+  or a few bytes less). The post-refactor (step 10/11) baseline is
+  **1 226 067 B (93%) flash / 82 812 B (25%) RAM** (step 11 is docs-only, so
+  the step-11 build is identical).
 
 ## Test build
 
@@ -92,6 +96,29 @@ lines of the 128×64 panel — `STATUS_CHARS_PER_LINE`).
 - Upload the **app** image (`*.ino.bin`, not `*.merged.bin`) as the firmware
   file, plus the bootloader and partition table so the addresses are inferred
   correctly.
+
+## Module map (post-refactor, step 11/11)
+
+The code is fully class-based (the refactoring in #42, steps 1–10). The shared
+objects are constructed in `TamAIgotchi.ino` (the sketch shell: `setup()` +
+`loop()` + object wiring) and referenced from the modules via the `extern` in
+each header:
+
+| Class | File | Role |
+|---|---|---|
+| `App` | `app.h/.cpp` | the IDLE / RECORDING / SENDING / RESPONSE state machine (formerly a global enum + the ~180 lines of inline loop logic) |
+| `Display` | `display.h/.cpp` | the single render pass (`render()`) + display-level actions (`showWifiStatus()`, `resetWifiSettingsAndRestart()`, `startRecording()`) |
+| `Recorder` | `recorder.h/.cpp` | the PSRAM recording buffer + the record → transcribe → LLM flow (`initRecBuffer()`, `sendRecording()`, `textGeneration()`) |
+| `AlienAnimation` | `alien.h/.cpp` | the idle-alien animation state machine + rendering |
+| `Bubble` | `bubble.h/.cpp` | the speech bubble: stored text, scroll / jump, `renderText()` |
+| `StatusBar` | `statusbar.h/.cpp` | the top two status lines: `show()` / `error()` / `clear()` / `draw()` (the 21-char truncation) |
+| `Button` | `buttons.h/.cpp` | one instance per physical button: `update()` + `isPressed()` / `isLongPressed()` / `isHeld()` |
+| `Led` | `led.h/.cpp` | the recording LED: `on()` / `off()` / `isOn()` |
+| `Hardware` | `hardware.h/.cpp` | the six shared library objects (`panel` / `i2s` / `wifi` / `openai` / `chat` / `audio`) + `init()` (pins + OLED + I2S bring-up) |
+
+Free functions that stay free: `wrapText()` in `text_utils.h/.cpp` (text
+wrapping only) and `setup()` / `loop()` in `TamAIgotchi.ino` (the app shell).
+All user-facing display strings live in `messages.h` (`MSG_*`).
 
 ## Layout quick reference (128×64, font size 1)
 
